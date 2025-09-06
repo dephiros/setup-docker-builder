@@ -237,6 +237,7 @@ export async function startAndConfigureBuildkitd(
   // Check that buildkit instance is ready by querying workers for up to 30s
   const startTimeBuildkitReady = Date.now();
   const timeoutBuildkitReady = buildkitdTimeoutMs;
+  let debugWorkersAvailableTime: number | undefined;
 
   while (Date.now() - startTimeBuildkitReady < timeoutBuildkitReady) {
     try {
@@ -247,8 +248,13 @@ export async function startAndConfigureBuildkitd(
       // We only need 1 worker for setup-docker-builder
       const requiredWorkers = 1;
       if (lines.length > requiredWorkers) {
+        // Record and log the time when debug workers became available
+        debugWorkersAvailableTime = Date.now() - startTimeBuildkitReady;
         core.info(
           `Found ${lines.length - 1} workers, required ${requiredWorkers}`,
+        );
+        core.info(
+          `Debug workers became available after ${debugWorkersAvailableTime}ms`,
         );
         break;
       }
@@ -272,6 +278,13 @@ export async function startAndConfigureBuildkitd(
         `buildkit workers not ready after ${buildkitdTimeoutMs}ms timeout. Found ${lines.length - 1} workers, required ${requiredWorkers}`,
       );
     }
+    // If we didn't record the time earlier (edge case), record and log it now
+    if (!debugWorkersAvailableTime) {
+      debugWorkersAvailableTime = Date.now() - startTimeBuildkitReady;
+      core.info(
+        `Debug workers became available after ${debugWorkersAvailableTime}ms (after timeout check)`,
+      );
+    }
   } catch (error) {
     core.warning(
       `Error checking buildkit workers: ${(error as Error).message}`,
@@ -292,9 +305,20 @@ export async function startAndConfigureBuildkitd(
 export async function pruneBuildkitCache(): Promise<void> {
   try {
     const sevenDaysInHours = 7 * 24;
-    await execAsync(
+    const { stdout } = await execAsync(
       `sudo buildctl --addr ${BUILDKIT_DAEMON_ADDR} prune --keep-duration ${sevenDaysInHours}h --all`,
     );
+
+    // Log the prune output for analysis
+    if (stdout) {
+      core.info("BuildKit prune output:");
+      stdout.split("\n").forEach((line) => {
+        if (line.trim()) {
+          core.info(`  ${line}`);
+        }
+      });
+    }
+
     core.debug("Successfully pruned buildkit cache");
   } catch (error) {
     core.warning(`Error pruning buildkit cache: ${(error as Error).message}`);
