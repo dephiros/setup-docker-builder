@@ -5,6 +5,8 @@ import { promisify } from "util";
 import * as TOML from "@iarna/toml";
 import * as reporter from "./reporter";
 import { execa } from "execa";
+// TODO: Uncomment when updating to @buf/blacksmith_vm-agent.bufbuild_es@2.7.0+
+// import { Metric_MetricType } from "@buf/blacksmith_vm-agent.bufbuild_es/stickydisk/v1/stickydisk_pb.js";
 
 // Constants for configuration.
 const BUILDKIT_DAEMON_ADDR = "tcp://127.0.0.1:1234";
@@ -250,6 +252,13 @@ export async function startAndConfigureBuildkitd(
         core.info(
           `Found ${lines.length - 1} workers, required ${requiredWorkers}`,
         );
+        // TODO: Report how long it took for workers to be available
+        // Uncomment when updating to @buf/blacksmith_vm-agent.bufbuild_es@2.7.0+
+        // const workersAvailableDuration = Date.now() - startTimeBuildkitReady;
+        // await reporter.reportMetric(
+        //   Metric_MetricType.BPA_V2_DEBUG_WORKERS_AVAILABLE_MS,
+        //   workersAvailableDuration,
+        // );
         break;
       }
     } catch (error) {
@@ -332,9 +341,36 @@ export async function pruneBuildkitCache(verbose = false): Promise<void> {
     }
 
     const sevenDaysInHours = 7 * 24;
-    await execAsync(
+    const pruneOutput = await execAsync(
       `sudo buildctl --addr ${BUILDKIT_DAEMON_ADDR} prune --keep-duration ${sevenDaysInHours}h --all`,
     );
+
+    // Parse prune output to get bytes freed
+    // buildctl prune typically outputs something like "Total: 1.2GB"
+    if (pruneOutput.stdout && verbose) {
+      const match = pruneOutput.stdout.match(
+        /Total:\s*([0-9.]+)\s*([KMGT]?B)/i,
+      );
+      if (match) {
+        // TODO: When updating to @buf/blacksmith_vm-agent.bufbuild_es@2.7.0+
+        // Parse the size and unit, convert to bytes, and report metric:
+        // const size = parseFloat(match[1]);
+        // const unit = match[2].toUpperCase();
+        // let bytes = size;
+        // switch (unit) {
+        //   case 'KB': bytes = size * 1024; break;
+        //   case 'MB': bytes = size * 1024 * 1024; break;
+        //   case 'GB': bytes = size * 1024 * 1024 * 1024; break;
+        //   case 'TB': bytes = size * 1024 * 1024 * 1024 * 1024; break;
+        // }
+        // await reporter.reportMetric(
+        //   Metric_MetricType.BPA_V2_PRUNE_BYTES,
+        //   Math.round(bytes),
+        // );
+
+        core.info(`Pruned ${match[0]} from BuildKit cache`);
+      }
+    }
 
     // Log cache state after pruning using docker buildx du
     if (verbose) {
