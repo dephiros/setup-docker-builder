@@ -38,6 +38,7 @@ export interface Inputs {
   platforms: string[];
   nofallback: boolean;
   "github-token": string;
+  verbose: boolean;
 }
 
 async function getInputs(): Promise<Inputs> {
@@ -47,6 +48,7 @@ async function getInputs(): Promise<Inputs> {
     platforms: Util.getInputList("platforms"),
     nofallback: core.getBooleanInput("nofallback"),
     "github-token": core.getInput("github-token"),
+    verbose: core.getBooleanInput("verbose"),
   };
 }
 
@@ -329,6 +331,8 @@ void actionsToolkit.run(
   async () => {
     await core.group("Cleaning up Docker builder", async () => {
       const exposeId = stateHelper.getExposeId();
+      const inputs = stateHelper.getInputs() as Inputs;
+      const verbose = inputs.verbose || false;
       let cleanupError: Error | null = null;
 
       try {
@@ -339,7 +343,7 @@ void actionsToolkit.run(
             // Optional: Prune cache before shutdown (non-critical)
             try {
               core.info("Pruning BuildKit cache");
-              await pruneBuildkitCache();
+              await pruneBuildkitCache(verbose);
               core.info("BuildKit cache pruned");
             } catch (error) {
               core.warning(

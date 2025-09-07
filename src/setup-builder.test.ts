@@ -99,7 +99,7 @@ describe("setup_builder", () => {
         },
       );
 
-      await setupBuilder.pruneBuildkitCache();
+      await setupBuilder.pruneBuildkitCache(false);
       expect(core.debug).toHaveBeenCalledWith(
         "Successfully pruned buildkit cache",
       );
@@ -117,7 +117,7 @@ describe("setup_builder", () => {
         },
       );
 
-      await expect(setupBuilder.pruneBuildkitCache()).rejects.toThrow();
+      await expect(setupBuilder.pruneBuildkitCache(false)).rejects.toThrow();
       expect(core.warning).toHaveBeenCalled();
     });
   });

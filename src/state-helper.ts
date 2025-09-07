@@ -37,3 +37,8 @@ export function setBuilderName(name: string) {
 export function getBuilderName(): string {
   return core.getState("builderName");
 }
+
+export function getInputs(): unknown {
+  const inputsState = core.getState("inputs");
+  return inputsState ? JSON.parse(inputsState) : {};
+}

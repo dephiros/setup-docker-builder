@@ -287,14 +287,94 @@ export async function startAndConfigureBuildkitd(
  * We don't specify any keep bytes here since we are
  * handling the ceph volume size limits ourselves in
  * the VM Agent.
+ * @param verbose - If true, logs detailed cache information
  * @throws Error if buildctl prune command fails
  */
-export async function pruneBuildkitCache(): Promise<void> {
+export async function pruneBuildkitCache(verbose = false): Promise<void> {
   try {
+    // Log cache state before pruning using docker buildx du
+    if (verbose) {
+      try {
+        const { stdout: cacheBeforePrune } = await execAsync(
+          `sudo docker buildx du --builder default 2>/dev/null || true`,
+        );
+        if (cacheBeforePrune) {
+          core.info("BuildKit cache details before prune:");
+          cacheBeforePrune
+            .split("\n")
+            .filter((line) => line.trim())
+            .forEach((line) => {
+              core.info(`  ${line}`);
+            });
+        }
+
+        // Also get a summary view with more details
+        const { stdout: detailedCacheBefore } = await execAsync(
+          `sudo docker buildx du --builder default --verbose 2>/dev/null || true`,
+        );
+        if (detailedCacheBefore) {
+          const lines = detailedCacheBefore
+            .split("\n")
+            .filter((line) => line.trim());
+          // Log the summary line and first few cache entries for context
+          const summaryLine = lines.find(
+            (line) => line.includes("Total:") || line.includes("TOTAL"),
+          );
+          if (summaryLine) {
+            core.info(`Total cache size before prune: ${summaryLine}`);
+          }
+        }
+      } catch (error) {
+        core.info(
+          `Could not get cache details before prune: ${(error as Error).message}`,
+        );
+      }
+    }
+
     const sevenDaysInHours = 7 * 24;
     await execAsync(
       `sudo buildctl --addr ${BUILDKIT_DAEMON_ADDR} prune --keep-duration ${sevenDaysInHours}h --all`,
     );
+
+    // Log cache state after pruning using docker buildx du
+    if (verbose) {
+      try {
+        const { stdout: cacheAfterPrune } = await execAsync(
+          `sudo docker buildx du --builder default 2>/dev/null || true`,
+        );
+        if (cacheAfterPrune) {
+          core.info("BuildKit cache details after prune:");
+          cacheAfterPrune
+            .split("\n")
+            .filter((line) => line.trim())
+            .forEach((line) => {
+              core.info(`  ${line}`);
+            });
+        }
+
+        // Also get a summary view with more details
+        const { stdout: detailedCacheAfter } = await execAsync(
+          `sudo docker buildx du --builder default --verbose 2>/dev/null || true`,
+        );
+        if (detailedCacheAfter) {
+          const lines = detailedCacheAfter
+            .split("\n")
+            .filter((line) => line.trim());
+          // Log the summary line
+          const summaryLine = lines.find(
+            (line) => line.includes("Total:") || line.includes("TOTAL"),
+          );
+          if (summaryLine) {
+            core.info(`Total cache size after prune: ${summaryLine}`);
+          }
+        }
+      } catch (error) {
+        core.info(
+          `Could not get cache details after prune: ${(error as Error).message}`,
+        );
+      }
+    }
+
     core.debug("Successfully pruned buildkit cache");
   } catch (error) {
     core.warning(`Error pruning buildkit cache: ${(error as Error).message}`);
