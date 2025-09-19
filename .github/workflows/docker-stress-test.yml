@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       push_image:
-        description: 'Push images to registry'
+        description: "Push images to registry"
         required: false
-        default: 'false'
+        default: "false"
 
 env:
   REGISTRY: ghcr.io
@@ -181,7 +181,7 @@ jobs:
         with:
           version: v0.12.0
           driver: docker-container
-          
+
       - name: Build with SBOM and provenance
         uses: docker/build-push-action@v5
         with:
@@ -246,7 +246,7 @@ jobs:
             dockerfile = "Dockerfile"
             tags = ["test/bake:latest"]
           }
-          
+
           target "production" {
             inherits = ["default"]
             tags = ["test/bake:prod"]
@@ -453,7 +453,7 @@ jobs:
           target: base
           tags: test/base:latest
           outputs: type=docker
-          
+
       - name: Second build - production image
         uses: docker/build-push-action@v5
         with:
