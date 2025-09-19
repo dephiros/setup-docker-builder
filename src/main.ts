@@ -336,6 +336,8 @@ void actionsToolkit.run(
         try {
           const { stdout } = await execAsync("pgrep buildkitd");
           if (stdout.trim()) {
+            core.info("buildkitd process is running");
+
             // Optional: Prune cache before shutdown (non-critical)
             try {
               core.info("Pruning BuildKit cache");
@@ -359,7 +361,30 @@ void actionsToolkit.run(
             );
             core.info("Shutdown buildkitd gracefully");
           } else {
-            core.debug("No buildkitd process found running");
+            // Check if buildkitd was expected to be running (we have state indicating it was started)
+            const buildkitdAddr = stateHelper.getBuildkitdAddr();
+            if (buildkitdAddr) {
+              core.warning(
+                "buildkitd process has crashed - process not found but was expected to be running",
+              );
+
+              // Print tail of buildkitd logs to help debug the crash
+              try {
+                const { stdout: logOutput } = await execAsync(
+                  "tail -n 100 /tmp/buildkitd.log 2>/dev/null || echo 'No buildkitd.log found'",
+                );
+                core.info("Last 100 lines of buildkitd.log:");
+                core.info(logOutput);
+              } catch (error) {
+                core.warning(
+                  `Could not read buildkitd logs: ${(error as Error).message}`,
+                );
+              }
+            } else {
+              core.debug(
+                "No buildkitd process found running and none was expected",
+              );
+            }
           }
         } catch (error) {
           // pgrep returns exit code 1 when no process found, which is OK
@@ -368,7 +393,31 @@ void actionsToolkit.run(
               `failed to check/shutdown buildkitd: ${(error as Error).message}`,
             );
           }
-          core.debug("No buildkitd process found (pgrep returned 1)");
+
+          // Check if buildkitd was expected to be running (we have state indicating it was started)
+          const buildkitdAddr = stateHelper.getBuildkitdAddr();
+          if (buildkitdAddr) {
+            core.warning(
+              "buildkitd process has crashed - pgrep failed but buildkitd was expected to be running",
+            );
+
+            // Print tail of blacksmithd logs to help debug the crash
+            try {
+              const { stdout: logOutput } = await execAsync(
+                "tail -n 100 /tmp/buildkitd.log 2>/dev/null || echo 'No buildkitd.log found'",
+              );
+              core.info("Last 100 lines of buildkitd.log:");
+              core.info(logOutput);
+            } catch (error) {
+              core.warning(
+                `Could not read buildkitd logs: ${(error as Error).message}`,
+              );
+            }
+          } else {
+            core.debug(
+              "No buildkitd process found (pgrep returned 1) and none was expected",
+            );
+          }
         }
 
         // Step 2: Sync and unmount sticky disk
