@@ -334,7 +334,9 @@ void actionsToolkit.run(
       try {
         // Step 1: Check if buildkitd is running and shut it down
         try {
+          core.info(`buildkitd addr: ${stateHelper.getBuildkitdAddr()}`);
           const { stdout } = await execAsync("pgrep buildkitd");
+          core.info(`buildkitd process: ${stdout.trim()}`);
           if (stdout.trim()) {
             core.info("buildkitd process is running");
 
