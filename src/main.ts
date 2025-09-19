@@ -181,148 +181,155 @@ async function startBlacksmithBuilder(
 void actionsToolkit.run(
   // main action
   async () => {
-    await reporter.reportMetric(Metric_MetricType.BPA_FEATURE_USAGE, 1);
+    try {
+      await reporter.reportMetric(Metric_MetricType.BPA_FEATURE_USAGE, 1);
 
-    const inputs = await getInputs();
-    stateHelper.setInputs(inputs);
+      const inputs = await getInputs();
+      stateHelper.setInputs(inputs);
 
-    const toolkit = new Toolkit();
+      const toolkit = new Toolkit();
 
-    // Print runtime token ACs
-    await core.group(`GitHub Actions runtime token ACs`, async () => {
-      try {
-        await GitHub.printActionsRuntimeTokenACs();
-      } catch (e) {
-        core.warning((e as Error).message);
-      }
-    });
-
-    // Print Docker info
-    await core.group(`Docker info`, async () => {
-      try {
-        await Docker.printVersion();
-        await Docker.printInfo();
-      } catch (e) {
-        core.info((e as Error).message);
-      }
-    });
-
-    // Validate and setup buildx version
-    let buildxVersion = DEFAULT_BUILDX_VERSION;
-    if (inputs["buildx-version"] && inputs["buildx-version"].trim() !== "") {
-      if (isValidBuildxVersion(inputs["buildx-version"])) {
-        buildxVersion = inputs["buildx-version"];
-      } else {
-        core.warning(
-          `Invalid buildx-version '${inputs["buildx-version"]}'. ` +
-            `Expected 'latest' or a version in the form v<MAJOR>.<MINOR>.<PATCH>. ` +
-            `Falling back to default ${DEFAULT_BUILDX_VERSION}.`,
-        );
-      }
-    }
-
-    // Setup buildx
-    await core.group(`Setup buildx`, async () => {
-      await setupBuildx(buildxVersion, toolkit);
-
-      if (!(await toolkit.buildx.isAvailable())) {
-        core.setFailed(
-          `Docker buildx is required. See https://github.com/docker/setup-buildx-action to set up buildx.`,
-        );
-        return;
-      }
-    });
-
-    // Start Blacksmith builder
-    let builderInfo: { addr: string | null; exposeId: string } = {
-      addr: null,
-      exposeId: "",
-    };
-    await core.group(`Starting Blacksmith builder`, async () => {
-      builderInfo = await startBlacksmithBuilder(inputs);
-    });
-
-    if (builderInfo.addr) {
-      // Create and configure the builder
-      await core.group(`Creating builder instance`, async () => {
-        const name = `blacksmith-${Date.now().toString(36)}`;
-        stateHelper.setBuilderName(name);
-
-        // Create the builder with platform configuration
-        const createArgs = ["create", "--name", name, "--driver", "remote"];
-
-        // Add platform flag - use user-supplied platforms or fallback to host arch
-        const platformFlag = resolveRemoteBuilderPlatforms(inputs.platforms);
-        core.info(`Determined remote builder platform(s): ${platformFlag}`);
-        createArgs.push("--platform", platformFlag);
-
-        createArgs.push(builderInfo.addr!);
-
-        const createCmd = await toolkit.buildx.getCommand(createArgs);
-
-        core.info(
-          `Creating builder with command: ${createCmd.command} ${createCmd.args.join(" ")}`,
-        );
-        await Exec.getExecOutput(createCmd.command, createCmd.args, {
-          ignoreReturnCode: true,
-        }).then((res) => {
-          if (res.stderr.length > 0 && res.exitCode != 0) {
-            throw new Error(
-              /(.*)\s*$/.exec(res.stderr)?.[0]?.trim() ?? "unknown error",
-            );
-          }
-        });
-
-        // Set as default builder
-        const useCmd = await toolkit.buildx.getCommand(["use", name]);
-        core.info("Setting builder as default");
-        await Exec.getExecOutput(useCmd.command, useCmd.args, {
-          ignoreReturnCode: true,
-        }).then((res) => {
-          if (res.stderr.length > 0 && res.exitCode != 0) {
-            throw new Error(
-              /(.*)\s*$/.exec(res.stderr)?.[0]?.trim() ?? "unknown error",
-            );
-          }
-        });
-      });
-
-      // Print builder info
-      await core.group(`Builder info`, async () => {
-        const builder = await toolkit.builder.inspect();
-        core.info(JSON.stringify(builder, null, 2));
-        core.info("Blacksmith builder is ready for use by Docker");
-      });
-    } else {
-      // Fallback to local builder
-      core.warning("Failed to setup Blacksmith builder, using local builder");
-      await core.group(`Checking for configured builder`, async () => {
+      // Print runtime token ACs
+      await core.group(`GitHub Actions runtime token ACs`, async () => {
         try {
-          const builder = await toolkit.builder.inspect();
-          if (builder) {
-            core.info(`Found configured builder: ${builder.name}`);
-          } else {
-            // Create a local builder
-            const createLocalBuilderCmd =
-              "docker buildx create --name local --driver docker-container --use";
-            try {
-              await Exec.exec(createLocalBuilderCmd);
-              core.info("Created and set a local builder for use");
-            } catch (error) {
-              core.setFailed(
-                `Failed to create local builder: ${(error as Error).message}`,
-              );
-            }
-          }
-        } catch (error) {
-          core.setFailed(
-            `Error configuring builder: ${(error as Error).message}`,
-          );
+          await GitHub.printActionsRuntimeTokenACs();
+        } catch (e) {
+          core.warning((e as Error).message);
         }
       });
-    }
 
-    stateHelper.setTmpDir(Context.tmpDir());
+      // Print Docker info
+      await core.group(`Docker info`, async () => {
+        try {
+          await Docker.printVersion();
+          await Docker.printInfo();
+        } catch (e) {
+          core.info((e as Error).message);
+        }
+      });
+
+      // Validate and setup buildx version
+      let buildxVersion = DEFAULT_BUILDX_VERSION;
+      if (inputs["buildx-version"] && inputs["buildx-version"].trim() !== "") {
+        if (isValidBuildxVersion(inputs["buildx-version"])) {
+          buildxVersion = inputs["buildx-version"];
+        } else {
+          core.warning(
+            `Invalid buildx-version '${inputs["buildx-version"]}'. ` +
+              `Expected 'latest' or a version in the form v<MAJOR>.<MINOR>.<PATCH>. ` +
+              `Falling back to default ${DEFAULT_BUILDX_VERSION}.`,
+          );
+        }
+      }
+
+      // Setup buildx
+      await core.group(`Setup buildx`, async () => {
+        await setupBuildx(buildxVersion, toolkit);
+
+        if (!(await toolkit.buildx.isAvailable())) {
+          core.setFailed(
+            `Docker buildx is required. See https://github.com/docker/setup-buildx-action to set up buildx.`,
+          );
+          return;
+        }
+      });
+
+      // Start Blacksmith builder
+      let builderInfo: { addr: string | null; exposeId: string } = {
+        addr: null,
+        exposeId: "",
+      };
+      await core.group(`Starting Blacksmith builder`, async () => {
+        builderInfo = await startBlacksmithBuilder(inputs);
+      });
+
+      if (builderInfo.addr) {
+        // Create and configure the builder
+        await core.group(`Creating builder instance`, async () => {
+          const name = `blacksmith-${Date.now().toString(36)}`;
+          stateHelper.setBuilderName(name);
+
+          // Create the builder with platform configuration
+          const createArgs = ["create", "--name", name, "--driver", "remote"];
+
+          // Add platform flag - use user-supplied platforms or fallback to host arch
+          const platformFlag = resolveRemoteBuilderPlatforms(inputs.platforms);
+          core.info(`Determined remote builder platform(s): ${platformFlag}`);
+          createArgs.push("--platform", platformFlag);
+
+          createArgs.push(builderInfo.addr!);
+
+          const createCmd = await toolkit.buildx.getCommand(createArgs);
+
+          core.info(
+            `Creating builder with command: ${createCmd.command} ${createCmd.args.join(" ")}`,
+          );
+          await Exec.getExecOutput(createCmd.command, createCmd.args, {
+            ignoreReturnCode: true,
+          }).then((res) => {
+            if (res.stderr.length > 0 && res.exitCode != 0) {
+              throw new Error(
+                /(.*)\s*$/.exec(res.stderr)?.[0]?.trim() ?? "unknown error",
+              );
+            }
+          });
+
+          // Set as default builder
+          const useCmd = await toolkit.buildx.getCommand(["use", name]);
+          core.info("Setting builder as default");
+          await Exec.getExecOutput(useCmd.command, useCmd.args, {
+            ignoreReturnCode: true,
+          }).then((res) => {
+            if (res.stderr.length > 0 && res.exitCode != 0) {
+              throw new Error(
+                /(.*)\s*$/.exec(res.stderr)?.[0]?.trim() ?? "unknown error",
+              );
+            }
+          });
+        });
+
+        // Print builder info
+        await core.group(`Builder info`, async () => {
+          const builder = await toolkit.builder.inspect();
+          core.info(JSON.stringify(builder, null, 2));
+          core.info("Blacksmith builder is ready for use by Docker");
+        });
+      } else {
+        // Fallback to local builder
+        core.warning("Failed to setup Blacksmith builder, using local builder");
+        await core.group(`Checking for configured builder`, async () => {
+          try {
+            const builder = await toolkit.builder.inspect();
+            if (builder) {
+              core.info(`Found configured builder: ${builder.name}`);
+            } else {
+              // Create a local builder
+              const createLocalBuilderCmd =
+                "docker buildx create --name local --driver docker-container --use";
+              try {
+                await Exec.exec(createLocalBuilderCmd);
+                core.info("Created and set a local builder for use");
+              } catch (error) {
+                core.setFailed(
+                  `Failed to create local builder: ${(error as Error).message}`,
+                );
+              }
+            }
+          } catch (error) {
+            core.setFailed(
+              `Error configuring builder: ${(error as Error).message}`,
+            );
+          }
+        });
+      }
+
+      stateHelper.setTmpDir(Context.tmpDir());
+    } finally {
+      // Sleep for 5 minutes to allow any pending IO to complete
+      core.info("Sleeping for 5 minutes to allow debugging to complete...");
+      await new Promise((resolve) => setTimeout(resolve, 5 * 60 * 1000));
+      core.info("Sleep complete");
+    }
   },
   // post action - cleanup
   async () => {
