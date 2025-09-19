@@ -512,6 +512,10 @@ void actionsToolkit.run(
             core.warning(
               "Skipping sticky disk commit due to previous step failures",
             );
+          } else if (stateHelper.getSigkillUsed()) {
+            core.warning(
+              "Skipping sticky disk commit because SIGKILL was used to terminate buildkitd - disk may be in a bad state",
+            );
           } else {
             // No failures detected and cleanup was successful
             try {

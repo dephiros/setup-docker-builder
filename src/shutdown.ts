@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import { promisify } from "util";
 import { exec } from "child_process";
+import * as stateHelper from "./state-helper";
 
 const execAsync = promisify(exec);
 
@@ -38,6 +39,10 @@ export async function shutdownBuildkitd(): Promise<void> {
     core.warning(
       `buildkitd did not shutdown gracefully after ${gracefulTimeout / 1000} seconds, forcing shutdown with SIGKILL`,
     );
+    core.warning(
+      "Disk may be in a bad state after SIGKILL - will prevent sticky disk commit",
+    );
+    stateHelper.setSigkillUsed(true);
     await execAsync(`sudo pkill -KILL buildkitd`);
 
     // Wait for forced shutdown.
