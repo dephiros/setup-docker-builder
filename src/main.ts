@@ -326,6 +326,64 @@ void actionsToolkit.run(
   },
   // post action - cleanup
   async () => {
+    // Install boltdb and run bolt check on database files
+    await core.group("BoltDB check", async () => {
+      try {
+        core.info("Installing boltdb tool...");
+        await execAsync("go install github.com/boltdb/bolt/cmd/bolt@latest");
+        core.info("Boltdb tool installed successfully");
+
+        // Check if /var/lib/buildkit directory exists
+        try {
+          await execAsync("test -d /var/lib/buildkit");
+          core.info(
+            "Found /var/lib/buildkit directory, checking for database files",
+          );
+
+          // Find all *.db files in /var/lib/buildkit
+          const { stdout: dbFiles } = await execAsync(
+            "find /var/lib/buildkit -name '*.db' 2>/dev/null || true",
+          );
+
+          if (dbFiles.trim()) {
+            const files = dbFiles.trim().split("\n");
+            core.info(
+              `Found ${files.length} database file(s): ${files.join(", ")}`,
+            );
+
+            for (const dbFile of files) {
+              if (dbFile.trim()) {
+                try {
+                  core.info(`Running bolt check on ${dbFile}...`);
+                  const { stdout: checkResult } = await execAsync(
+                    `timeout 30s ~/go/bin/bolt check "${dbFile}" 2>&1 || echo "Check completed with timeout or error"`,
+                  );
+                  if (checkResult.includes("OK")) {
+                    core.info(`✓ ${dbFile}: Database integrity check passed`);
+                  } else {
+                    core.warning(`⚠ ${dbFile}: ${checkResult}`);
+                  }
+                } catch (error) {
+                  core.warning(
+                    `Failed to check ${dbFile}: ${(error as Error).message}`,
+                  );
+                }
+              }
+            }
+          } else {
+            core.info("No *.db files found in /var/lib/buildkit");
+          }
+        } catch (error) {
+          core.info(
+            `/var/lib/buildkit directory not found, skipping database checks ${(error as Error).message}`,
+          );
+        }
+      } catch (error) {
+        core.warning(`BoltDB check failed: ${(error as Error).message}`);
+        // Don't fail the entire post step for bolt check errors
+      }
+    });
+
     await core.group("Cleaning up Docker builder", async () => {
       const exposeId = stateHelper.getExposeId();
       let cleanupError: Error | null = null;
