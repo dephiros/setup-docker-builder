@@ -356,7 +356,7 @@ void actionsToolkit.run(
                 try {
                   core.info(`Running bolt check on ${dbFile}...`);
                   const { stdout: checkResult } = await execAsync(
-                    `timeout 30s ~/go/bin/bolt check "${dbFile}" 2>&1 || echo "Check completed with timeout or error"`,
+                    `timeout 30s sudo ~/go/bin/bolt check "${dbFile}" 2>&1 || echo "Check completed with timeout or error"`,
                   );
                   if (checkResult.includes("OK")) {
                     core.info(`✓ ${dbFile}: Database integrity check passed`);
