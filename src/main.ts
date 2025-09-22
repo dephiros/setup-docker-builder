@@ -329,6 +329,7 @@ void actionsToolkit.run(
     await core.group("Cleaning up Docker builder", async () => {
       const exposeId = stateHelper.getExposeId();
       let cleanupError: Error | null = null;
+      let integrityCheckPassed = true;
 
       try {
         // Step 1: Check if buildkitd is running and shut it down
@@ -433,7 +434,7 @@ void actionsToolkit.run(
             // Check if /var/lib/buildkit directory exists
             try {
               await execAsync("test -d /var/lib/buildkit");
-              core.info(
+              core.debug(
                 "Found /var/lib/buildkit directory, checking for database files",
               );
 
@@ -461,11 +462,13 @@ void actionsToolkit.run(
                         );
                       } else {
                         core.warning(`⚠ ${dbFile}: ${checkResult}`);
+                        integrityCheckPassed = false;
                       }
                     } catch (error) {
                       core.warning(
                         `Failed to check ${dbFile}: ${(error as Error).message}`,
                       );
+                      integrityCheckPassed = false;
                     }
                   }
                 }
@@ -559,6 +562,10 @@ void actionsToolkit.run(
             );
             core.warning(
               "Skipping sticky disk commit due to ambiguity in failure detection",
+            );
+          } else if (!integrityCheckPassed) {
+            core.warning(
+              "Skipping sticky disk commit due to integrity check failure",
             );
           } else if (failureCheck.hasFailures) {
             core.warning(
