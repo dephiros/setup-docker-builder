@@ -424,13 +424,8 @@ void actionsToolkit.run(
 
         // Install boltdb and run bolt check on database files
         await core.group("BoltDB check", async () => {
+          // The bbolt binary is pre-installed on VMs.
           try {
-            core.info("Installing boltdb tool...");
-            await execAsync(
-              "go install github.com/boltdb/bolt/cmd/bolt@latest",
-            );
-            core.info("Boltdb tool installed successfully");
-
             // Check if /var/lib/buildkit directory exists
             try {
               await execAsync("test -d /var/lib/buildkit");
@@ -454,7 +449,7 @@ void actionsToolkit.run(
                     try {
                       core.info(`Running bolt check on ${dbFile}...`);
                       const { stdout: checkResult } = await execAsync(
-                        `timeout 30s sudo ~/go/bin/bolt check "${dbFile}" 2>&1 || echo "Check completed with timeout or error"`,
+                        `timeout 30s sudo bbolt check "${dbFile}" 2>&1 || echo "Check completed with timeout or error"`,
                       );
                       if (checkResult.includes("OK")) {
                         core.info(
