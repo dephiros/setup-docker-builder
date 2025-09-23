@@ -206,6 +206,25 @@ async function startBlacksmithBuilder(
     // Get CPU count for parallelism
     const parallelism = await getNumCPUs();
 
+    // Check if buildkitd is already running before starting
+    try {
+      const { stdout } = await execAsync("pgrep buildkitd");
+      if (stdout.trim()) {
+        throw new Error(
+          `Detected existing buildkitd process (PID: ${stdout.trim()}). Refusing to start to avoid conflicts.`,
+        );
+      }
+    } catch (error) {
+      if ((error as { code?: number }).code !== 1) {
+        // pgrep returns exit code 1 when no process found, which is what we want
+        // Any other error code indicates a real problem
+        throw new Error(
+          `Failed to check for existing buildkitd process: ${(error as Error).message}`,
+        );
+      }
+      // Exit code 1 means no buildkitd process found, which is good - we can proceed
+    }
+
     // Start buildkitd
     const buildkitdStartTime = Date.now();
     const buildkitdAddr = await startAndConfigureBuildkitd(
