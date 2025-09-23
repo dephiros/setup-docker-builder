@@ -31,6 +31,65 @@ const DEFAULT_BUILDX_VERSION = "v0.23.0";
 const mountPoint = "/var/lib/buildkit";
 const execAsync = promisify(exec);
 
+async function checkBoltDbIntegrity(): Promise<boolean> {
+  try {
+    // Check if /var/lib/buildkit directory exists
+    try {
+      await execAsync("test -d /var/lib/buildkit");
+      core.debug(
+        "Found /var/lib/buildkit directory, checking for database files",
+      );
+
+      // Find all *.db files in /var/lib/buildkit
+      const { stdout: dbFiles } = await execAsync(
+        "find /var/lib/buildkit -name '*.db' 2>/dev/null || true",
+      );
+
+      if (dbFiles.trim()) {
+        const files = dbFiles.trim().split("\n");
+        core.info(
+          `Found ${files.length} database file(s): ${files.join(", ")}`,
+        );
+
+        let allChecksPass = true;
+        for (const dbFile of files) {
+          if (dbFile.trim()) {
+            try {
+              core.info(`Running bolt check on ${dbFile}...`);
+              const { stdout: checkResult } = await execAsync(
+                `timeout 30s sudo bbolt check "${dbFile}" 2>&1 || echo "Check completed with timeout or error"`,
+              );
+              if (checkResult.includes("OK")) {
+                core.info(`✓ ${dbFile}: Database integrity check passed`);
+              } else {
+                core.warning(`⚠ ${dbFile}: ${checkResult}`);
+                allChecksPass = false;
+              }
+            } catch (error) {
+              core.warning(
+                `Failed to check ${dbFile}: ${(error as Error).message}`,
+              );
+              allChecksPass = false;
+            }
+          }
+        }
+        return allChecksPass;
+      } else {
+        core.info("No *.db files found in /var/lib/buildkit");
+        return true;
+      }
+    } catch (error) {
+      core.info(
+        `/var/lib/buildkit directory not found, skipping database checks ${(error as Error).message}`,
+      );
+      return true;
+    }
+  } catch (error) {
+    core.warning(`BoltDB check failed: ${(error as Error).message}`);
+    return false;
+  }
+}
+
 // Minimal inputs interface for setup-docker-builder
 export interface Inputs {
   "buildx-version": string;
@@ -329,6 +388,7 @@ void actionsToolkit.run(
     await core.group("Cleaning up Docker builder", async () => {
       const exposeId = stateHelper.getExposeId();
       let cleanupError: Error | null = null;
+      let integrityCheckPassed: boolean | null = null;
 
       try {
         // Step 1: Check if buildkitd is running and shut it down
@@ -428,6 +488,7 @@ void actionsToolkit.run(
           const { stdout: mountOutput } = await execAsync(
             `mount | grep ${mountPoint}`,
           );
+          integrityCheckPassed = await checkBoltDbIntegrity();
           if (mountOutput) {
             for (let attempt = 1; attempt <= 3; attempt++) {
               try {
@@ -497,6 +558,14 @@ void actionsToolkit.run(
             );
             core.warning(
               "Skipping sticky disk commit due to ambiguity in failure detection",
+            );
+          } else if (integrityCheckPassed === null) {
+            core.warning(
+              "Skipping sticky disk commit due to integrity check not being run",
+            );
+          } else if (!integrityCheckPassed) {
+            core.warning(
+              "Skipping sticky disk commit due to integrity check failure",
             );
           } else if (failureCheck.hasFailures) {
             core.warning(
