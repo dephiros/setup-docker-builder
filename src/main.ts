@@ -225,6 +225,12 @@ async function startBlacksmithBuilder(
       // Exit code 1 means no buildkitd process found, which is good - we can proceed
     }
 
+    // Check for potential boltdb corruption
+    const boltdbIntegrity = await checkBoltDbIntegrity();
+    if (!boltdbIntegrity) {
+      core.error("BoltDB integrity check failed");
+    }
+
     // Start buildkitd
     const buildkitdStartTime = Date.now();
     const buildkitdAddr = await startAndConfigureBuildkitd(
