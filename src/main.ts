@@ -17,6 +17,7 @@ import {
   startAndConfigureBuildkitd,
   getNumCPUs,
   pruneBuildkitCache,
+  computeAndLogVolumeHash,
 } from "./setup_builder";
 import {
   installBuildKit,
@@ -626,6 +627,10 @@ void actionsToolkit.run(
               core.info(
                 "No previous step failures detected, committing sticky disk after successful cleanup",
               );
+
+              // Compute and log hash before committing
+              await computeAndLogVolumeHash("before commit");
+
               await reporter.commitStickyDisk(exposeId);
             } catch (error) {
               core.error(

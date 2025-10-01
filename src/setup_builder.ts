@@ -6,6 +6,8 @@ import * as TOML from "@iarna/toml";
 import * as reporter from "./reporter";
 import { execa } from "execa";
 import * as stateHelper from "./state-helper";
+import * as crypto from "crypto";
+import * as path from "path";
 
 // Constants for configuration.
 const BUILDKIT_DAEMON_ADDR = "tcp://127.0.0.1:1234";
@@ -304,6 +306,116 @@ export async function pruneBuildkitCache(): Promise<void> {
   }
 }
 
+/**
+ * Computes a hash for a file by reading its contents
+ */
+async function hashFile(filePath: string): Promise<string> {
+  const content = await fs.promises.readFile(filePath);
+  return crypto.createHash("sha256").update(content).digest("hex");
+}
+
+/**
+ * Recursively computes a hash for a directory tree.
+ * - Files are hashed by their content
+ * - Directories are hashed by the sorted concatenation of (name, hash) pairs of their children
+ */
+async function hashDirectoryTree(dirPath: string): Promise<string> {
+  try {
+    const stats = await fs.promises.stat(dirPath);
+
+    if (stats.isFile()) {
+      return await hashFile(dirPath);
+    }
+
+    if (stats.isDirectory()) {
+      const entries = await fs.promises.readdir(dirPath, {
+        withFileTypes: true,
+      });
+
+      // Compute hash for each child
+      const childHashes: Array<{ name: string; hash: string }> = [];
+
+      for (const entry of entries) {
+        const childPath = path.join(dirPath, entry.name);
+        try {
+          const childHash = await hashDirectoryTree(childPath);
+          childHashes.push({ name: entry.name, hash: childHash });
+        } catch (error) {
+          // Skip files/dirs that can't be accessed (permissions, etc.)
+          core.debug(
+            `Skipping ${childPath} during hash computation: ${(error as Error).message}`,
+          );
+        }
+      }
+
+      // Sort by name to ensure consistent hashing
+      childHashes.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Concatenate sorted (name, hash) pairs and hash the result
+      const combined = childHashes
+        .map((ch) => `${ch.name}:${ch.hash}`)
+        .join("|");
+      return crypto.createHash("sha256").update(combined).digest("hex");
+    }
+
+    // For other types (symlinks, etc), return empty hash
+    return crypto.createHash("sha256").update("").digest("hex");
+  } catch (error) {
+    core.warning(`Error hashing ${dirPath}: ${(error as Error).message}`);
+    // Return a hash of empty string for paths that error
+    return crypto.createHash("sha256").update("").digest("hex");
+  }
+}
+
+/**
+ * Computes and logs the hash of the sticky disk volume
+ * Times out after 5 seconds
+ */
+export async function computeAndLogVolumeHash(
+  label: string,
+): Promise<string | null> {
+  try {
+    core.info(`Computing volume hash (${label})...`);
+    const startTime = Date.now();
+
+    // Create a timeout promise
+    const timeoutMs = 5000;
+    const timeoutPromise = new Promise<string>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Hash computation timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    // Race between hash computation and timeout
+    const volumeHash = await Promise.race([
+      hashDirectoryTree(mountPoint),
+      timeoutPromise,
+    ]);
+
+    const duration = Date.now() - startTime;
+    const durationSeconds = (duration / 1000).toFixed(2);
+
+    if (duration > timeoutMs - 500) {
+      core.warning(
+        `⚠ Volume hash computation took ${durationSeconds}s (close to ${timeoutMs / 1000}s timeout)`,
+      );
+    }
+
+    core.info(
+      `Volume hash (${label}): ${volumeHash} (computed in ${durationSeconds}s)`,
+    );
+    return volumeHash;
+  } catch (error) {
+    const errorMsg = (error as Error).message;
+    if (errorMsg.includes("timed out")) {
+      core.warning(`⚠ Volume hash computation (${label}) timed out after 5s`);
+    } else {
+      core.warning(`Failed to compute volume hash (${label}): ${errorMsg}`);
+    }
+    return null;
+  }
+}
+
 // stickyDiskTimeoutMs states the max amount of time this action will wait for the VM agent to
 // expose the sticky disk from the storage agent, map it onto the host and then patch the drive
 // into the VM.
@@ -336,6 +448,9 @@ export async function setupStickyDisk(): Promise<{
     await execAsync(`sudo mount ${device} ${mountPoint}`);
     core.debug(`${device} has been mounted to ${mountPoint}`);
     core.info("Successfully obtained sticky disk");
+
+    // Compute and log hash of mounted volume
+    await computeAndLogVolumeHash("after mount");
 
     return { device, exposeId };
   } catch (error) {
