@@ -56,9 +56,19 @@ async function checkBoltDbIntegrity(): Promise<boolean> {
           if (dbFile.trim()) {
             try {
               core.info(`Running bolt check on ${dbFile}...`);
+              const startTime = Date.now();
               const { stdout: checkResult } = await execAsync(
-                `timeout 30s sudo bbolt check "${dbFile}" 2>&1 || echo "Check completed with timeout or error"`,
+                `timeout 6s sudo bbolt check "${dbFile}" 2>&1 || echo "Check completed with timeout or error"`,
               );
+              const duration = Date.now() - startTime;
+              const durationSeconds = (duration / 1000).toFixed(2);
+
+              if (duration > 5000) {
+                core.warning(
+                  `⚠ ${dbFile}: Check took ${durationSeconds}s (exceeded 5s threshold)`,
+                );
+              }
+
               if (checkResult.includes("OK")) {
                 core.info(`✓ ${dbFile}: Database integrity check passed`);
               } else {
@@ -223,6 +233,12 @@ async function startBlacksmithBuilder(
         );
       }
       // Exit code 1 means no buildkitd process found, which is good - we can proceed
+    }
+
+    // Check for potential boltdb corruption
+    const boltdbIntegrity = await checkBoltDbIntegrity();
+    if (!boltdbIntegrity) {
+      core.error("BoltDB integrity check failed");
     }
 
     // Start buildkitd
