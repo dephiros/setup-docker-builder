@@ -319,7 +319,9 @@ export async function logDatabaseHashes(label: string): Promise<void> {
   for (const filePath of dbFiles) {
     try {
       // Use timeout and md5sum to offload computation, avoiding reading file in Node.js
-      const { stdout } = await execAsync(`timeout 5s md5sum "${filePath}"`);
+      const { stdout } = await execAsync(
+        `timeout 5s sudo md5sum "${filePath}"`,
+      );
       const output = stdout.trim();
 
       if (output) {
