@@ -319,22 +319,26 @@ export async function logDatabaseHashes(label: string): Promise<void> {
   for (const filePath of dbFiles) {
     try {
       // Use timeout and md5sum to offload computation, avoiding reading file in Node.js
-      const { stdout } = await execAsync(
-        `timeout 5s md5sum "${filePath}" 2>/dev/null || echo "timeout"`,
-      );
+      const { stdout } = await execAsync(`timeout 5s md5sum "${filePath}"`);
       const output = stdout.trim();
 
-      if (output === "timeout") {
-        core.warning(`  ${filePath}: hash computation timed out after 5s`);
-      } else if (output) {
+      if (output) {
         // md5sum output format: "hash  filename"
         const hash = output.split(/\s+/)[0];
         core.info(`  ${filePath}: ${hash}`);
       } else {
         core.info(`  ${filePath}: not found`);
       }
-    } catch {
-      core.info(`  ${filePath}: not found`);
+    } catch (error) {
+      // timeout command returns exit code 124 on timeout
+      const execError = error as { code?: number; message?: string };
+      if (execError.code === 124) {
+        core.warning(`  ${filePath}: hash computation timed out after 5s`);
+      } else {
+        core.info(
+          `  ${filePath}: error computing hash - ${execError.message || "unknown error"}`,
+        );
+      }
     }
   }
 }
