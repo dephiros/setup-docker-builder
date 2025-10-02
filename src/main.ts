@@ -522,7 +522,24 @@ void actionsToolkit.run(
               core.info(
                 "No previous step failures detected, committing sticky disk after successful cleanup",
               );
-              await reporter.commitStickyDisk(exposeId);
+              
+              // Get filesystem usage of /var/lib/buildkit mount point
+              let fsDiskUsageBytes = 0;
+              try {
+                const { stdout } = await execAsync(
+                  "df -B1 --output=used /var/lib/buildkit | tail -n1",
+                );
+                fsDiskUsageBytes = parseInt(stdout.trim());
+                core.info(
+                  `Filesystem usage: ${fsDiskUsageBytes} bytes (${(fsDiskUsageBytes / (1 << 30)).toFixed(2)} GB)`,
+                );
+              } catch (error) {
+                core.warning(
+                  `Failed to get filesystem usage: ${(error as Error).message}`,
+                );
+              }
+
+              await reporter.commitStickyDisk(exposeId, fsDiskUsageBytes);
             } catch (error) {
               core.error(
                 `Failed to commit sticky disk: ${(error as Error).message}`,
