@@ -117,6 +117,18 @@ export async function commitStickyDisk(
   try {
     const agentClient = createBlacksmithAgentClient();
 
+    // Ensure fsDiskUsageBytes is a valid non-negative number before converting to BigInt
+    const validatedUsageBytes =
+      !isNaN(fsDiskUsageBytes) && fsDiskUsageBytes >= 0
+        ? fsDiskUsageBytes
+        : 0;
+
+    if (validatedUsageBytes !== fsDiskUsageBytes) {
+      core.warning(
+        `Invalid fsDiskUsageBytes value ${fsDiskUsageBytes}, using 0 instead`
+      );
+    }
+
     await agentClient.commitStickyDisk({
       exposeId: exposeId,
       stickyDiskKey: process.env.GITHUB_REPO_NAME || "",
@@ -124,7 +136,7 @@ export async function commitStickyDisk(
       shouldCommit: true,
       repoName: process.env.GITHUB_REPO_NAME || "",
       stickyDiskToken: process.env.BLACKSMITH_STICKYDISK_TOKEN || "",
-      fsDiskUsageBytes: BigInt(fsDiskUsageBytes),
+      fsDiskUsageBytes: BigInt(validatedUsageBytes),
     });
 
     core.info("Successfully committed sticky disk");

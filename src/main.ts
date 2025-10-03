@@ -529,10 +529,19 @@ void actionsToolkit.run(
                 const { stdout } = await execAsync(
                   "df -B1 --output=used /var/lib/buildkit | tail -n1",
                 );
-                fsDiskUsageBytes = parseInt(stdout.trim());
-                core.info(
-                  `Filesystem usage: ${fsDiskUsageBytes} bytes (${(fsDiskUsageBytes / (1 << 30)).toFixed(2)} GB)`,
-                );
+                const parsedValue = parseInt(stdout.trim(), 10);
+                
+                if (isNaN(parsedValue) || parsedValue < 0) {
+                  core.warning(
+                    `Invalid filesystem usage value from df: "${stdout.trim()}". Defaulting to 0.`,
+                  );
+                  fsDiskUsageBytes = 0;
+                } else {
+                  fsDiskUsageBytes = parsedValue;
+                  core.info(
+                    `Filesystem usage: ${fsDiskUsageBytes} bytes (${(fsDiskUsageBytes / (1 << 30)).toFixed(2)} GB)`,
+                  );
+                }
               } catch (error) {
                 core.warning(
                   `Failed to get filesystem usage: ${(error as Error).message}`,
