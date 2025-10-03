@@ -17,6 +17,7 @@ import {
   startAndConfigureBuildkitd,
   getNumCPUs,
   pruneBuildkitCache,
+  logDatabaseHashes,
 } from "./setup_builder";
 import {
   installBuildKit,
@@ -30,6 +31,75 @@ import { Metric_MetricType } from "@buf/blacksmith_vm-agent.bufbuild_es/stickydi
 const DEFAULT_BUILDX_VERSION = "v0.23.0";
 const mountPoint = "/var/lib/buildkit";
 const execAsync = promisify(exec);
+
+async function checkBoltDbIntegrity(): Promise<boolean> {
+  try {
+    // Check if /var/lib/buildkit directory exists
+    try {
+      await execAsync("test -d /var/lib/buildkit");
+      core.debug(
+        "Found /var/lib/buildkit directory, checking for database files",
+      );
+
+      // Find all *.db files in /var/lib/buildkit
+      const { stdout: dbFiles } = await execAsync(
+        "find /var/lib/buildkit -name '*.db' 2>/dev/null || true",
+      );
+
+      if (dbFiles.trim()) {
+        const files = dbFiles.trim().split("\n");
+        core.info(
+          `Found ${files.length} database file(s): ${files.join(", ")}`,
+        );
+
+        let allChecksPass = true;
+        for (const dbFile of files) {
+          if (dbFile.trim()) {
+            try {
+              core.info(`Running bolt check on ${dbFile}...`);
+              const startTime = Date.now();
+              const { stdout: checkResult } = await execAsync(
+                `timeout 6s sudo bbolt check "${dbFile}" 2>&1 || echo "Check completed with timeout or error"`,
+              );
+              const duration = Date.now() - startTime;
+              const durationSeconds = (duration / 1000).toFixed(2);
+
+              if (duration > 5000) {
+                core.warning(
+                  `⚠ ${dbFile}: Check took ${durationSeconds}s (exceeded 5s threshold)`,
+                );
+              }
+
+              if (checkResult.includes("OK")) {
+                core.info(`✓ ${dbFile}: Database integrity check passed`);
+              } else {
+                core.warning(`⚠ ${dbFile}: ${checkResult}`);
+                allChecksPass = false;
+              }
+            } catch (error) {
+              core.warning(
+                `Failed to check ${dbFile}: ${(error as Error).message}`,
+              );
+              allChecksPass = false;
+            }
+          }
+        }
+        return allChecksPass;
+      } else {
+        core.info("No *.db files found in /var/lib/buildkit");
+        return true;
+      }
+    } catch (error) {
+      core.info(
+        `/var/lib/buildkit directory not found, skipping database checks ${(error as Error).message}`,
+      );
+      return true;
+    }
+  } catch (error) {
+    core.warning(`BoltDB check failed: ${(error as Error).message}`);
+    return false;
+  }
+}
 
 // Minimal inputs interface for setup-docker-builder
 export interface Inputs {
@@ -146,6 +216,31 @@ async function startBlacksmithBuilder(
 
     // Get CPU count for parallelism
     const parallelism = await getNumCPUs();
+
+    // Check if buildkitd is already running before starting
+    try {
+      const { stdout } = await execAsync("pgrep buildkitd");
+      if (stdout.trim()) {
+        throw new Error(
+          `Detected existing buildkitd process (PID: ${stdout.trim()}). Refusing to start to avoid conflicts.`,
+        );
+      }
+    } catch (error) {
+      if ((error as { code?: number }).code !== 1) {
+        // pgrep returns exit code 1 when no process found, which is what we want
+        // Any other error code indicates a real problem
+        throw new Error(
+          `Failed to check for existing buildkitd process: ${(error as Error).message}`,
+        );
+      }
+      // Exit code 1 means no buildkitd process found, which is good - we can proceed
+    }
+
+    // Check for potential boltdb corruption
+    const boltdbIntegrity = await checkBoltDbIntegrity();
+    if (!boltdbIntegrity) {
+      core.error("BoltDB integrity check failed");
+    }
 
     // Start buildkitd
     const buildkitdStartTime = Date.now();
@@ -329,6 +424,7 @@ void actionsToolkit.run(
     await core.group("Cleaning up Docker builder", async () => {
       const exposeId = stateHelper.getExposeId();
       let cleanupError: Error | null = null;
+      let integrityCheckPassed: boolean | null = null;
 
       try {
         // Step 1: Check if buildkitd is running and shut it down
@@ -428,6 +524,11 @@ void actionsToolkit.run(
           const { stdout: mountOutput } = await execAsync(
             `mount | grep ${mountPoint}`
           );
+          integrityCheckPassed = await checkBoltDbIntegrity();
+
+          // Log database file hashes after integrity check
+          await logDatabaseHashes("after integrity check");
+
           if (mountOutput) {
             for (let attempt = 1; attempt <= 3; attempt++) {
               try {
@@ -498,6 +599,14 @@ void actionsToolkit.run(
             core.warning(
               "Skipping sticky disk commit due to ambiguity in failure detection"
             );
+          } else if (integrityCheckPassed === null) {
+            core.warning(
+              "Skipping sticky disk commit due to integrity check not being run",
+            );
+          } else if (!integrityCheckPassed) {
+            core.warning(
+              "Skipping sticky disk commit due to integrity check failure",
+            );
           } else if (failureCheck.hasFailures) {
             core.warning(
               `Found ${failureCheck.failedCount} failed/cancelled steps in previous workflow steps`
@@ -520,55 +629,55 @@ void actionsToolkit.run(
             // No failures detected and cleanup was successful
             try {
               core.info(
-                "No previous step failures detected, committing sticky disk after successful cleanup"
+                "No previous step failures detected, committing sticky disk after successful cleanup",
               );
 
               // Get filesystem usage of /var/lib/buildkit mount point
               let fsDiskUsageBytes: number | null = null;
               try {
                 const { stdout } = await execAsync(
-                  "df -B1 --output=used /var/lib/buildkit | tail -n1"
+                  "df -B1 --output=used /var/lib/buildkit | tail -n1",
                 );
                 const parsedValue = parseInt(stdout.trim(), 10);
 
                 if (isNaN(parsedValue) || parsedValue <= 0) {
                   core.warning(
-                    `Invalid filesystem usage value from df: "${stdout.trim()}". Will not report fs usage.`
+                    `Invalid filesystem usage value from df: "${stdout.trim()}". Will not report fs usage.`,
                   );
                 } else {
                   fsDiskUsageBytes = parsedValue;
                   core.info(
-                    `Filesystem usage: ${fsDiskUsageBytes} bytes (${(fsDiskUsageBytes / (1 << 30)).toFixed(2)} GB)`
+                    `Filesystem usage: ${fsDiskUsageBytes} bytes (${(fsDiskUsageBytes / (1 << 30)).toFixed(2)} GB)`,
                   );
                 }
               } catch (error) {
                 core.warning(
-                  `Failed to get filesystem usage: ${(error as Error).message}. Will not report fs usage.`
+                  `Failed to get filesystem usage: ${(error as Error).message}. Will not report fs usage.`,
                 );
               }
 
               await reporter.commitStickyDisk(exposeId, fsDiskUsageBytes);
             } catch (error) {
               core.error(
-                `Failed to commit sticky disk: ${(error as Error).message}`
+                `Failed to commit sticky disk: ${(error as Error).message}`,
               );
               await reporter.reportBuildPushActionFailure(
                 "STICKYDISK_COMMIT",
                 error as Error,
-                "sticky disk commit"
+                "sticky disk commit",
               );
             }
           }
         } else {
           core.warning(
-            `Skipping sticky disk commit due to cleanup error: ${cleanupError.message}`
+            `Skipping sticky disk commit due to cleanup error: ${cleanupError.message}`,
           );
         }
       } else {
         core.warning(
-          "Expose ID not found in state, skipping sticky disk commit"
+          "Expose ID not found in state, skipping sticky disk commit",
         );
       }
     });
-  }
+  },
 );
