@@ -123,7 +123,7 @@ async function getInputs(): Promise<Inputs> {
 async function retryWithBackoff<T>(
   operation: () => Promise<T>,
   maxRetries = 5,
-  initialBackoffMs = 200
+  initialBackoffMs = 200,
 ): Promise<T> {
   let lastError: Error = new Error("No error occurred");
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -155,7 +155,7 @@ async function setupBuildx(version: string, toolkit: Toolkit): Promise<void> {
   if (!(await toolkit.buildx.isAvailable()) || version) {
     await core.group(`Download buildx from GitHub Releases`, async () => {
       toolPath = await retryWithBackoff(() =>
-        toolkit.buildxInstall.download(version || "latest", true)
+        toolkit.buildxInstall.download(version || "latest", true),
       );
     });
   }
@@ -184,7 +184,7 @@ function isValidBuildxVersion(version: string): boolean {
  * Returns the buildkit address and expose ID for the sticky disk
  */
 async function startBlacksmithBuilder(
-  inputs: Inputs
+  inputs: Inputs,
 ): Promise<{ addr: string | null; exposeId: string }> {
   try {
     // Setup sticky disk
@@ -193,7 +193,7 @@ async function startBlacksmithBuilder(
     const stickyDiskDurationMs = Date.now() - stickyDiskStartTime;
     await reporter.reportMetric(
       Metric_MetricType.BPA_HOTLOAD_DURATION_MS,
-      stickyDiskDurationMs
+      stickyDiskDurationMs,
     );
 
     // Install BuildKit if version specified
@@ -246,12 +246,12 @@ async function startBlacksmithBuilder(
     const buildkitdStartTime = Date.now();
     const buildkitdAddr = await startAndConfigureBuildkitd(
       parallelism,
-      buildkitdPath
+      buildkitdPath,
     );
     const buildkitdDurationMs = Date.now() - buildkitdStartTime;
     await reporter.reportMetric(
       Metric_MetricType.BPA_BUILDKITD_READY_DURATION_MS,
-      buildkitdDurationMs
+      buildkitdDurationMs,
     );
 
     // Save state for post action
@@ -261,13 +261,13 @@ async function startBlacksmithBuilder(
   } catch (error) {
     if (inputs.nofallback) {
       core.warning(
-        `Error during Blacksmith builder setup: ${(error as Error).message}. Failing because nofallback is set.`
+        `Error during Blacksmith builder setup: ${(error as Error).message}. Failing because nofallback is set.`,
       );
       throw error;
     }
 
     core.warning(
-      `Error during Blacksmith builder setup: ${(error as Error).message}. Falling back to local builder.`
+      `Error during Blacksmith builder setup: ${(error as Error).message}. Falling back to local builder.`,
     );
     return { addr: null, exposeId: "" };
   }
@@ -311,7 +311,7 @@ void actionsToolkit.run(
         core.warning(
           `Invalid buildx-version '${inputs["buildx-version"]}'. ` +
             `Expected 'latest' or a version in the form v<MAJOR>.<MINOR>.<PATCH>. ` +
-            `Falling back to default ${DEFAULT_BUILDX_VERSION}.`
+            `Falling back to default ${DEFAULT_BUILDX_VERSION}.`,
         );
       }
     }
@@ -322,7 +322,7 @@ void actionsToolkit.run(
 
       if (!(await toolkit.buildx.isAvailable())) {
         core.setFailed(
-          `Docker buildx is required. See https://github.com/docker/setup-buildx-action to set up buildx.`
+          `Docker buildx is required. See https://github.com/docker/setup-buildx-action to set up buildx.`,
         );
         return;
       }
@@ -356,14 +356,14 @@ void actionsToolkit.run(
         const createCmd = await toolkit.buildx.getCommand(createArgs);
 
         core.info(
-          `Creating builder with command: ${createCmd.command} ${createCmd.args.join(" ")}`
+          `Creating builder with command: ${createCmd.command} ${createCmd.args.join(" ")}`,
         );
         await Exec.getExecOutput(createCmd.command, createCmd.args, {
           ignoreReturnCode: true,
         }).then((res) => {
           if (res.stderr.length > 0 && res.exitCode != 0) {
             throw new Error(
-              /(.*)\s*$/.exec(res.stderr)?.[0]?.trim() ?? "unknown error"
+              /(.*)\s*$/.exec(res.stderr)?.[0]?.trim() ?? "unknown error",
             );
           }
         });
@@ -376,7 +376,7 @@ void actionsToolkit.run(
         }).then((res) => {
           if (res.stderr.length > 0 && res.exitCode != 0) {
             throw new Error(
-              /(.*)\s*$/.exec(res.stderr)?.[0]?.trim() ?? "unknown error"
+              /(.*)\s*$/.exec(res.stderr)?.[0]?.trim() ?? "unknown error",
             );
           }
         });
@@ -405,13 +405,13 @@ void actionsToolkit.run(
               core.info("Created and set a local builder for use");
             } catch (error) {
               core.setFailed(
-                `Failed to create local builder: ${(error as Error).message}`
+                `Failed to create local builder: ${(error as Error).message}`,
               );
             }
           }
         } catch (error) {
           core.setFailed(
-            `Error configuring builder: ${(error as Error).message}`
+            `Error configuring builder: ${(error as Error).message}`,
           );
         }
       });
@@ -442,7 +442,7 @@ void actionsToolkit.run(
               core.info("BuildKit cache pruned");
             } catch (error) {
               core.warning(
-                `Error pruning BuildKit cache: ${(error as Error).message}`
+                `Error pruning BuildKit cache: ${(error as Error).message}`,
               );
               // Don't fail cleanup for cache prune errors
             }
@@ -454,7 +454,7 @@ void actionsToolkit.run(
               Date.now() - buildkitdShutdownStartTime;
             await reporter.reportMetric(
               Metric_MetricType.BPA_BUILDKITD_SHUTDOWN_DURATION_MS,
-              buildkitdShutdownDurationMs
+              buildkitdShutdownDurationMs,
             );
             core.info("Shutdown buildkitd gracefully");
           } else {
@@ -462,24 +462,24 @@ void actionsToolkit.run(
             const buildkitdAddr = stateHelper.getBuildkitdAddr();
             if (buildkitdAddr) {
               core.warning(
-                "buildkitd process has crashed - process not found but was expected to be running"
+                "buildkitd process has crashed - process not found but was expected to be running",
               );
 
               // Print tail of buildkitd logs to help debug the crash
               try {
                 const { stdout: logOutput } = await execAsync(
-                  "tail -n 100 /tmp/buildkitd.log 2>/dev/null || echo 'No buildkitd.log found'"
+                  "tail -n 100 /tmp/buildkitd.log 2>/dev/null || echo 'No buildkitd.log found'",
                 );
                 core.info("Last 100 lines of buildkitd.log:");
                 core.info(logOutput);
               } catch (error) {
                 core.warning(
-                  `Could not read buildkitd logs: ${(error as Error).message}`
+                  `Could not read buildkitd logs: ${(error as Error).message}`,
                 );
               }
             } else {
               core.debug(
-                "No buildkitd process found running and none was expected"
+                "No buildkitd process found running and none was expected",
               );
             }
           }
@@ -487,7 +487,7 @@ void actionsToolkit.run(
           // pgrep returns exit code 1 when no process found, which is OK
           if ((error as { code?: number }).code !== 1) {
             throw new Error(
-              `failed to check/shutdown buildkitd: ${(error as Error).message}`
+              `failed to check/shutdown buildkitd: ${(error as Error).message}`,
             );
           }
 
@@ -495,24 +495,24 @@ void actionsToolkit.run(
           const buildkitdAddr = stateHelper.getBuildkitdAddr();
           if (buildkitdAddr) {
             core.warning(
-              "buildkitd process has crashed - pgrep failed but buildkitd was expected to be running"
+              "buildkitd process has crashed - pgrep failed but buildkitd was expected to be running",
             );
 
             // Print tail of blacksmithd logs to help debug the crash
             try {
               const { stdout: logOutput } = await execAsync(
-                "tail -n 100 /tmp/buildkitd.log 2>/dev/null || echo 'No buildkitd.log found'"
+                "tail -n 100 /tmp/buildkitd.log 2>/dev/null || echo 'No buildkitd.log found'",
               );
               core.info("Last 100 lines of buildkitd.log:");
               core.info(logOutput);
             } catch (error) {
               core.warning(
-                `Could not read buildkitd logs: ${(error as Error).message}`
+                `Could not read buildkitd logs: ${(error as Error).message}`,
               );
             }
           } else {
             core.debug(
-              "No buildkitd process found (pgrep returned 1) and none was expected"
+              "No buildkitd process found (pgrep returned 1) and none was expected",
             );
           }
         }
@@ -522,7 +522,7 @@ void actionsToolkit.run(
 
         try {
           const { stdout: mountOutput } = await execAsync(
-            `mount | grep ${mountPoint}`
+            `mount | grep ${mountPoint}`,
           );
           integrityCheckPassed = await checkBoltDbIntegrity();
 
@@ -538,7 +538,7 @@ void actionsToolkit.run(
               } catch (error) {
                 if (attempt === 3) {
                   throw new Error(
-                    `Failed to unmount ${mountPoint} after 3 attempts: ${(error as Error).message}`
+                    `Failed to unmount ${mountPoint} after 3 attempts: ${(error as Error).message}`,
                   );
                 }
                 core.warning(`Unmount failed, retrying (${attempt}/3)...`);
@@ -552,7 +552,7 @@ void actionsToolkit.run(
           // grep returns exit code 1 when no matches, which is OK
           if ((error as { code?: number }).code !== 1) {
             throw new Error(
-              `Failed to unmount sticky disk: ${(error as Error).message}`
+              `Failed to unmount sticky disk: ${(error as Error).message}`,
             );
           }
           core.debug("No sticky disk mount found (grep returned 1)");
@@ -565,7 +565,7 @@ void actionsToolkit.run(
             core.debug(`Removed temp folder ${stateHelper.tmpDir}`);
           } catch (error) {
             core.warning(
-              `Failed to remove temp directory: ${(error as Error).message}`
+              `Failed to remove temp directory: ${(error as Error).message}`,
             );
             // Don't fail cleanup for temp directory removal
           }
@@ -579,7 +579,7 @@ void actionsToolkit.run(
         await reporter.reportBuildPushActionFailure(
           "BUILDER_CLEANUP",
           cleanupError,
-          "docker builder cleanup"
+          "docker builder cleanup",
         );
       }
 
@@ -588,16 +588,16 @@ void actionsToolkit.run(
         if (!cleanupError) {
           // Check if any previous steps failed or were cancelled
           core.info(
-            "Checking for previous step failures before committing sticky disk"
+            "Checking for previous step failures before committing sticky disk",
           );
           const failureCheck = await checkPreviousStepFailures();
 
           if (failureCheck.error) {
             core.warning(
-              `Unable to check for previous step failures: ${failureCheck.error}`
+              `Unable to check for previous step failures: ${failureCheck.error}`,
             );
             core.warning(
-              "Skipping sticky disk commit due to ambiguity in failure detection"
+              "Skipping sticky disk commit due to ambiguity in failure detection",
             );
           } else if (integrityCheckPassed === null) {
             core.warning(
@@ -609,21 +609,21 @@ void actionsToolkit.run(
             );
           } else if (failureCheck.hasFailures) {
             core.warning(
-              `Found ${failureCheck.failedCount} failed/cancelled steps in previous workflow steps`
+              `Found ${failureCheck.failedCount} failed/cancelled steps in previous workflow steps`,
             );
             if (failureCheck.failedSteps) {
               failureCheck.failedSteps.forEach((step) => {
                 core.warning(
-                  `  - Step: ${step.stepName || step.action || "unknown"} (${step.result})`
+                  `  - Step: ${step.stepName || step.action || "unknown"} (${step.result})`,
                 );
               });
             }
             core.warning(
-              "Skipping sticky disk commit due to previous step failures"
+              "Skipping sticky disk commit due to previous step failures",
             );
           } else if (stateHelper.getSigkillUsed()) {
             core.warning(
-              "Skipping sticky disk commit because SIGKILL was used to terminate buildkitd - disk may be in a bad state"
+              "Skipping sticky disk commit because SIGKILL was used to terminate buildkitd - disk may be in a bad state",
             );
           } else {
             // No failures detected and cleanup was successful

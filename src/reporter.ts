@@ -45,7 +45,7 @@ const createBlacksmithAPIClient = () => {
 
 export function createBlacksmithAgentClient() {
   core.info(
-    `Creating Blacksmith agent client with port: ${process.env.BLACKSMITH_STICKY_DISK_GRPC_PORT || "5557"}`
+    `Creating Blacksmith agent client with port: ${process.env.BLACKSMITH_STICKY_DISK_GRPC_PORT || "5557"}`,
   );
   const transport = createGrpcTransport({
     baseUrl: `http://192.168.127.1:${process.env.BLACKSMITH_STICKY_DISK_GRPC_PORT || "5557"}`,
@@ -62,7 +62,7 @@ export async function reportBuildPushActionFailure(
     | "STICKYDISK_SETUP"
     | "STICKYDISK_COMMIT",
   error?: Error,
-  event?: string
+  event?: string,
 ) {
   const requestOptions = {
     stickydisk_key: process.env.GITHUB_REPO_NAME || "",
@@ -79,19 +79,19 @@ export async function reportBuildPushActionFailure(
     const client = createBlacksmithAPIClient();
     const response = await client.post(
       "/stickydisks/report-failed",
-      requestOptions
+      requestOptions,
     );
     return response.data;
   } catch (error) {
     core.warning(
-      `Failed to report error to Blacksmith: ${(error as Error).message}`
+      `Failed to report error to Blacksmith: ${(error as Error).message}`,
     );
   }
 }
 
 export async function reportMetric(
   metricType: Metric_MetricType,
-  value: number
+  value: number,
 ) {
   try {
     const agentClient = createBlacksmithAgentClient();
@@ -112,7 +112,7 @@ export async function reportMetric(
 
 export async function commitStickyDisk(
   exposeId: string,
-  fsDiskUsageBytes: number | null
+  fsDiskUsageBytes: number | null,
 ): Promise<void> {
   try {
     const agentClient = createBlacksmithAgentClient();
@@ -133,7 +133,7 @@ export async function commitStickyDisk(
       core.debug(`Reporting fs usage: ${fsDiskUsageBytes} bytes`);
     } else {
       core.debug(
-        "No fs usage data available, storage agent will use fallback sizing"
+        "No fs usage data available, storage agent will use fallback sizing",
       );
     }
 
