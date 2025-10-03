@@ -378,6 +378,25 @@ export async function setupStickyDisk(): Promise<{
     core.debug(`${device} has been mounted to ${mountPoint}`);
     core.info("Successfully obtained sticky disk");
 
+    // Log filesystem free space after mount
+    try {
+      const { stdout } = await execAsync(
+        `df -B1 --output=avail ${mountPoint} | tail -n1`,
+      );
+      const freeBytes = parseInt(stdout.trim(), 10);
+      if (!isNaN(freeBytes) && freeBytes > 0) {
+        const freeGiB = freeBytes / (1 << 30);
+        core.info(
+          `Filesystem free space after mount: ${freeBytes} bytes (${freeGiB.toFixed(2)} GiB)`,
+        );
+      } else {
+        core.warning(`Invalid free space value from df: "${stdout.trim()}"`);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      core.warning(`Failed to get filesystem free space: ${errorMsg}`);
+    }
+
     // Log database file hashes after mount
     await logDatabaseHashes("after mount");
 
