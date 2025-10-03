@@ -378,6 +378,24 @@ export async function setupStickyDisk(): Promise<{
     core.debug(`${device} has been mounted to ${mountPoint}`);
     core.info("Successfully obtained sticky disk");
 
+    // Log filesystem space after mount
+    try {
+      const { stdout: dfOutput } = await execAsync(
+        `df -B1 ${mountPoint} | tail -n1 | awk '{print $2, $3, $4}'`,
+      );
+      const [totalBytes, usedBytes, availBytes] = dfOutput
+        .trim()
+        .split(/\s+/)
+        .map((s) => parseInt(s, 10));
+      core.info(
+        `Filesystem space on ${mountPoint}: Total=${(totalBytes / (1 << 30)).toFixed(2)} GiB, Used=${(usedBytes / (1 << 30)).toFixed(2)} GiB, Available=${(availBytes / (1 << 30)).toFixed(2)} GiB`,
+      );
+    } catch (error) {
+      core.warning(
+        `Failed to get filesystem space info: ${(error as Error).message}`,
+      );
+    }
+
     // Log database file hashes after mount
     await logDatabaseHashes("after mount");
 
