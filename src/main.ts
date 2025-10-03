@@ -544,7 +544,7 @@ void actionsToolkit.run(
             } else {
               fsDiskUsageBytes = parsedValue;
               core.info(
-                `Filesystem usage: ${parsedValue} bytes (${(parsedValue / (1 << 30)).toFixed(2)} GB}`,
+                `Filesystem usage: ${parsedValue} bytes (${(parsedValue / (1 << 30)).toFixed(2)} GiB)`,
               );
             }
           } catch (error) {
