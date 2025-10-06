@@ -533,18 +533,23 @@ void actionsToolkit.run(
           // Get filesystem usage BEFORE unmounting (critical timing)
           try {
             const { stdout } = await execAsync(
-              "df -B1 --output=used /var/lib/buildkit | tail -n1",
+              "df -B1 --output=used,size /var/lib/buildkit | tail -n1",
             );
-            const parsedValue = parseInt(stdout.trim(), 10);
+            const values = stdout.trim().split(/\s+/);
+            const usedBytes = parseInt(values[0], 10);
+            const sizeBytes = parseInt(values[1], 10);
 
-            if (isNaN(parsedValue) || parsedValue <= 0) {
+            if (isNaN(usedBytes) || usedBytes <= 0 || isNaN(sizeBytes) || sizeBytes <= 0) {
               core.warning(
-                `Invalid filesystem usage value from df: "${stdout.trim()}". Will not report fs usage.`,
+                `Invalid filesystem values from df: "${stdout.trim()}". Will not report fs usage.`,
               );
             } else {
-              fsDiskUsageBytes = parsedValue;
+              fsDiskUsageBytes = usedBytes;
+              const usedGiB = (usedBytes / (1 << 30)).toFixed(2);
+              const sizeGiB = (sizeBytes / (1 << 30)).toFixed(2);
+              const usagePercent = ((usedBytes / sizeBytes) * 100).toFixed(1);
               core.info(
-                `Filesystem usage: ${parsedValue} bytes (${(parsedValue / (1 << 30)).toFixed(2)} GiB)`,
+                `Filesystem usage: ${usedBytes} bytes (${usedGiB} GiB) / ${sizeBytes} bytes (${sizeGiB} GiB) [${usagePercent}%]`,
               );
             }
           } catch (error) {
