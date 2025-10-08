@@ -582,7 +582,7 @@ void actionsToolkit.run(
             `mount | grep "${mountPoint}"`,
           );
           integrityCheckPassed = await checkBoltDbIntegrity(
-            stateHelper.inputs?.["skip-integrity-check"],
+            stateHelper.inputs?.["skip-integrity-check"] ?? false,
           );
 
           // Log database file hashes after integrity check
