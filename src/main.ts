@@ -78,7 +78,7 @@ async function checkBoltDbIntegrity(): Promise<boolean> {
 
               try {
                 const { stdout: checkResult } = await execAsync(
-                  `timeout 6s sudo prlimit --as=536870912 bbolt check "${dbFile}" 2>&1`,
+                  `timeout 6s sudo prlimit --rss=536870912 bbolt check "${dbFile}" 2>&1`,
                 );
                 const duration = Date.now() - startTime;
                 const durationSeconds = (duration / 1000).toFixed(2);
