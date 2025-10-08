@@ -32,7 +32,14 @@ const DEFAULT_BUILDX_VERSION = "v0.23.0";
 const mountPoint = "/var/lib/buildkit";
 const execAsync = promisify(exec);
 
-async function checkBoltDbIntegrity(): Promise<boolean> {
+async function checkBoltDbIntegrity(skip = false): Promise<boolean> {
+  if (skip) {
+    core.info(
+      "Skipping bbolt database integrity check (skip-integrity-check is enabled)",
+    );
+    return true;
+  }
+
   try {
     // Check if /var/lib/buildkit directory exists
     try {
@@ -78,7 +85,7 @@ async function checkBoltDbIntegrity(): Promise<boolean> {
 
               try {
                 const { stdout: checkResult } = await execAsync(
-                  `timeout 6s sudo prlimit --rss=536870912 bbolt check "${dbFile}" 2>&1`,
+                  `timeout 6s sudo systemd-run --scope --quiet -p MemoryMax=512M bbolt check "${dbFile}" 2>&1`,
                 );
                 const duration = Date.now() - startTime;
                 const durationSeconds = (duration / 1000).toFixed(2);
@@ -153,6 +160,7 @@ export interface Inputs {
   platforms: string[];
   nofallback: boolean;
   "github-token": string;
+  "skip-integrity-check": boolean;
 }
 
 async function getInputs(): Promise<Inputs> {
@@ -162,6 +170,7 @@ async function getInputs(): Promise<Inputs> {
     platforms: Util.getInputList("platforms"),
     nofallback: core.getBooleanInput("nofallback"),
     "github-token": core.getInput("github-token"),
+    "skip-integrity-check": core.getBooleanInput("skip-integrity-check"),
   };
 }
 
@@ -282,7 +291,9 @@ async function startBlacksmithBuilder(
     }
 
     // Check for potential boltdb corruption
-    const boltdbIntegrity = await checkBoltDbIntegrity();
+    const boltdbIntegrity = await checkBoltDbIntegrity(
+      inputs["skip-integrity-check"],
+    );
     if (!boltdbIntegrity) {
       core.error("BoltDB integrity check failed");
     }
@@ -570,7 +581,9 @@ void actionsToolkit.run(
           const { stdout: mountOutput } = await execAsync(
             `mount | grep "${mountPoint}"`,
           );
-          integrityCheckPassed = await checkBoltDbIntegrity();
+          integrityCheckPassed = await checkBoltDbIntegrity(
+            stateHelper.inputs?.["skip-integrity-check"] ?? false,
+          );
 
           // Log database file hashes after integrity check
           await logDatabaseHashes("after integrity check");
