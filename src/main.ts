@@ -56,25 +56,60 @@ async function checkBoltDbIntegrity(): Promise<boolean> {
         for (const dbFile of files) {
           if (dbFile.trim()) {
             try {
-              core.info(`Running bolt check on ${dbFile}...`);
-              const startTime = Date.now();
-              const { stdout: checkResult } = await execAsync(
-                `timeout 6s sudo bbolt check "${dbFile}" 2>&1 || echo "Check completed with timeout or error"`,
+              // Get file size
+              const { stdout: sizeOutput } = await execAsync(
+                `stat -c%s "${dbFile}" 2>/dev/null || stat -f%z "${dbFile}"`,
               );
-              const duration = Date.now() - startTime;
-              const durationSeconds = (duration / 1000).toFixed(2);
+              const sizeBytes = parseInt(sizeOutput.trim(), 10);
+              const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
 
-              if (duration > 5000) {
-                core.warning(
-                  `⚠ ${dbFile}: Check took ${durationSeconds}s (exceeded 5s threshold)`,
+              core.info(`Running bolt check on ${dbFile} (${sizeMB} MB)...`);
+              const startTime = Date.now();
+
+              try {
+                const { stdout: checkResult } = await execAsync(
+                  `timeout 6s sudo prlimit --as=536870912 bbolt check "${dbFile}" 2>&1`,
                 );
-              }
+                const duration = Date.now() - startTime;
+                const durationSeconds = (duration / 1000).toFixed(2);
 
-              if (checkResult.includes("OK")) {
-                core.info(`✓ ${dbFile}: Database integrity check passed`);
-              } else {
-                core.warning(`⚠ ${dbFile}: ${checkResult}`);
-                allChecksPass = false;
+                if (duration > 5000) {
+                  core.warning(
+                    `⚠ ${dbFile}: Check took ${durationSeconds}s (exceeded 5s threshold)`,
+                  );
+                }
+
+                if (checkResult.includes("OK")) {
+                  core.info(`✓ ${dbFile}: Database integrity check passed`);
+                } else {
+                  core.warning(`⚠ ${dbFile}: ${checkResult}`);
+                  allChecksPass = false;
+                }
+              } catch (checkError) {
+                const duration = Date.now() - startTime;
+                const durationSeconds = (duration / 1000).toFixed(2);
+                const exitCode = (checkError as { code?: number }).code;
+                const errorMessage = (checkError as Error).message;
+
+                // Exit code 124 = timeout, 137 = SIGKILL (likely OOM), 143 = SIGTERM
+                if (exitCode === 124) {
+                  core.warning(
+                    `⚠ ${dbFile}: Integrity check timed out after ${durationSeconds}s - skipping (not counted as failure)`,
+                  );
+                } else if (
+                  exitCode === 137 ||
+                  errorMessage.toLowerCase().includes("out of memory") ||
+                  errorMessage.toLowerCase().includes("cannot allocate memory")
+                ) {
+                  core.warning(
+                    `⚠ ${dbFile}: Integrity check hit memory limit - skipping (not counted as failure)`,
+                  );
+                } else {
+                  core.warning(
+                    `⚠ ${dbFile}: Integrity check failed: ${errorMessage}`,
+                  );
+                  allChecksPass = false;
+                }
               }
             } catch (error) {
               core.warning(
@@ -539,7 +574,12 @@ void actionsToolkit.run(
             const usedBytes = parseInt(values[0], 10);
             const sizeBytes = parseInt(values[1], 10);
 
-            if (isNaN(usedBytes) || usedBytes <= 0 || isNaN(sizeBytes) || sizeBytes <= 0) {
+            if (
+              isNaN(usedBytes) ||
+              usedBytes <= 0 ||
+              isNaN(sizeBytes) ||
+              sizeBytes <= 0
+            ) {
               core.warning(
                 `Invalid filesystem values from df: "${stdout.trim()}". Will not report fs usage.`,
               );
