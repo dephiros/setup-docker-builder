@@ -57,13 +57,23 @@ async function checkBoltDbIntegrity(): Promise<boolean> {
           if (dbFile.trim()) {
             try {
               // Get file size
-              const { stdout: sizeOutput } = await execAsync(
-                `stat -c%s "${dbFile}" 2>/dev/null || stat -f%z "${dbFile}"`,
-              );
-              const sizeBytes = parseInt(sizeOutput.trim(), 10);
-              const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
+              let sizeInfo = "";
+              try {
+                const { stdout: sizeOutput } = await execAsync(
+                  `stat -c%s "${dbFile}" 2>/dev/null || stat -f%z "${dbFile}"`,
+                );
+                const sizeBytes = parseInt(sizeOutput.trim(), 10);
+                if (!isNaN(sizeBytes) && sizeBytes > 0) {
+                  const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
+                  sizeInfo = ` (${sizeMB} MB)`;
+                }
+              } catch (error) {
+                core.debug(
+                  `Could not determine file size for ${dbFile}: ${(error as Error).message}`,
+                );
+              }
 
-              core.info(`Running bolt check on ${dbFile} (${sizeMB} MB)...`);
+              core.info(`Running bolt check on ${dbFile}${sizeInfo}...`);
               const startTime = Date.now();
 
               try {
