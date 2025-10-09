@@ -162,9 +162,10 @@ async function testSyncEffectiveness(): Promise<void> {
         }
 
         // 1. Write a test file to generate dirty pages (10MB)
-        // Use Node.js writeFileSync to avoid E2BIG (argument list too long)
-        const testData = Buffer.alloc(10 * 1024 * 1024, "x");
-        fs.writeFileSync(testFile, testData);
+        // Use dd to create the file (avoids E2BIG and permission issues)
+        await execAsync(
+          `sudo dd if=/dev/zero of=${testFile} bs=1M count=10 2>/dev/null`,
+        );
 
         // Small delay to ensure write is buffered
         await new Promise((resolve) => setTimeout(resolve, 50));
