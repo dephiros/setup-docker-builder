@@ -32,6 +32,148 @@ const DEFAULT_BUILDX_VERSION = "v0.23.0";
 const mountPoint = "/var/lib/buildkit";
 const execAsync = promisify(exec);
 
+/**
+ * Diagnoses the RBD device configuration and cache settings
+ * This helps us understand if writes are being properly flushed to Ceph
+ */
+async function diagnoseRbdDevice(): Promise<void> {
+  core.startGroup("🔍 Diagnosing RBD device configuration");
+
+  try {
+    // 1. Find the device backing /var/lib/buildkit
+    try {
+      const { stdout: mountInfo } = await execAsync(
+        "mount | grep /var/lib/buildkit",
+      );
+      core.info(`Mount info: ${mountInfo}`);
+
+      // Extract device path (e.g., /dev/nbd0 or /dev/rbd0)
+      const deviceMatch = mountInfo.match(/^(\/dev\/[^\s]+)/);
+      if (deviceMatch) {
+        const devicePath = deviceMatch[1];
+        core.info(`📦 Device path: ${devicePath}`);
+
+        // Determine device type
+        if (devicePath.includes("/dev/nbd")) {
+          core.info("🔌 Using NBD (Network Block Device)");
+
+          // Check NBD connection status
+          try {
+            const { stdout: nbdInfo } = await execAsync(
+              `sudo nbd-client -l ${devicePath} 2>&1 || echo "nbd-client info not available"`,
+            );
+            core.info(`NBD info: ${nbdInfo}`);
+          } catch {
+            core.debug("Could not get NBD info");
+          }
+        } else if (devicePath.includes("/dev/rbd")) {
+          core.info("🗄️  Using krbd (Kernel RBD)");
+
+          // Show mapped RBD devices
+          try {
+            const { stdout: rbdMapped } = await execAsync(
+              "sudo rbd showmapped 2>&1 || echo 'No mapped devices'",
+            );
+            core.info(`RBD mappings:\n${rbdMapped}`);
+          } catch {
+            core.debug("Could not get RBD mappings");
+          }
+        }
+
+        // 2. Check device write cache settings
+        const deviceName = devicePath.replace("/dev/", "");
+        try {
+          const { stdout: writeCache } = await execAsync(
+            `cat /sys/block/${deviceName}/queue/write_cache 2>&1 || echo "unavailable"`,
+          );
+          core.info(`💾 Write cache setting: ${writeCache.trim()}`);
+        } catch {
+          core.debug("Could not read write cache setting");
+        }
+
+        // 3. Check pending I/O on device
+        try {
+          const { stdout: ioStat } = await execAsync(
+            `cat /sys/block/${deviceName}/stat 2>&1 || echo "unavailable"`,
+          );
+          core.info(`📊 Device I/O stats: ${ioStat.trim()}`);
+        } catch {
+          core.debug("Could not read device stats");
+        }
+
+        // 4. Check if there are any dirty pages
+        try {
+          const { stdout: dirtyPages } = await execAsync(
+            "cat /proc/meminfo | grep -E 'Dirty|Writeback'",
+          );
+          core.info(`📝 Memory dirty pages:\n${dirtyPages.trim()}`);
+        } catch {
+          core.debug("Could not read dirty pages");
+        }
+      }
+    } catch (error) {
+      core.warning(`Could not diagnose mount: ${(error as Error).message}`);
+    }
+
+    // 5. Check RBD client configuration if available
+    try {
+      const { stdout: rbdConfig } = await execAsync(
+        "ceph config get client rbd_cache 2>&1 || echo 'not available'",
+      );
+      core.info(`⚙️  RBD cache config: ${rbdConfig.trim()}`);
+    } catch {
+      core.debug("Ceph config not available");
+    }
+  } catch (error) {
+    core.warning(
+      `RBD diagnosis failed: ${(error as Error).message} (non-critical)`,
+    );
+  } finally {
+    core.endGroup();
+  }
+}
+
+/**
+ * Performs aggressive flushing to ensure all writes reach Ceph cluster
+ * This is a diagnostic/fix attempt for the checksum mismatch issue
+ */
+async function aggressiveFlush(): Promise<void> {
+  core.info("🔄 Performing aggressive flush sequence...");
+
+  // 1. Standard filesystem sync
+  await execAsync("sync");
+  core.info("  ✓ sync completed");
+
+  // 2. Find and flush the block device
+  try {
+    const { stdout: mountInfo } = await execAsync(
+      "mount | grep /var/lib/buildkit",
+    );
+    const deviceMatch = mountInfo.match(/^(\/dev\/[^\s]+)/);
+
+    if (deviceMatch) {
+      const devicePath = deviceMatch[1];
+      core.info(`  🔧 Flushing block device: ${devicePath}`);
+
+      // Flush the block device buffers
+      await execAsync(`sudo blockdev --flushbufs ${devicePath}`);
+      core.info("  ✓ blockdev --flushbufs completed");
+
+      // Another sync to be sure
+      await execAsync("sync");
+      core.info("  ✓ final sync completed");
+
+      // Small delay to let any async operations complete
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      core.info("  ✓ settling delay completed");
+    }
+  } catch (error) {
+    core.warning(
+      `Aggressive flush partially failed: ${(error as Error).message}`,
+    );
+  }
+}
+
 async function checkBoltDbIntegrity(skip = false): Promise<boolean> {
   if (skip) {
     core.info(
@@ -574,13 +716,30 @@ void actionsToolkit.run(
           }
         }
 
-        // Step 2: Sync and unmount sticky disk
-        await execAsync("sync");
+        // Step 2: Diagnose RBD configuration and perform aggressive flush
+        await diagnoseRbdDevice();
+
+        // Use aggressive flush instead of simple sync to ensure all writes reach Ceph
+        core.info("Performing aggressive flush before integrity check...");
+        await aggressiveFlush();
 
         try {
           const { stdout: mountOutput } = await execAsync(
             `mount | grep "${mountPoint}"`,
           );
+
+          // Check dirty pages again after flush
+          try {
+            const { stdout: dirtyAfterFlush } = await execAsync(
+              "cat /proc/meminfo | grep -E 'Dirty|Writeback'",
+            );
+            core.info(
+              `📝 Dirty pages after aggressive flush:\n${dirtyAfterFlush.trim()}`,
+            );
+          } catch {
+            core.debug("Could not check dirty pages after flush");
+          }
+
           integrityCheckPassed = await checkBoltDbIntegrity(
             stateHelper.inputs?.["skip-integrity-check"] ?? false,
           );

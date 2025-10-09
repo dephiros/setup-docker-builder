@@ -378,6 +378,52 @@ export async function setupStickyDisk(): Promise<{
     core.debug(`${device} has been mounted to ${mountPoint}`);
     core.info("Successfully obtained sticky disk");
 
+    // Diagnose RBD device configuration on mount
+    core.startGroup("🔍 RBD device info at mount time");
+    try {
+      core.info(`📦 Mounted device: ${device}`);
+
+      // Check device type
+      if (device.includes("/dev/nbd")) {
+        core.info("🔌 Device type: NBD (Network Block Device)");
+      } else if (device.includes("/dev/rbd")) {
+        core.info("🗄️  Device type: krbd (Kernel RBD)");
+        try {
+          const { stdout: rbdMapped } = await execAsync(
+            "sudo rbd showmapped 2>&1 || echo 'No mapped devices'",
+          );
+          core.info(`RBD mappings:\n${rbdMapped}`);
+        } catch {
+          core.debug("Could not get RBD mappings");
+        }
+      }
+
+      // Check write cache
+      const deviceName = device.replace("/dev/", "");
+      try {
+        const { stdout: writeCache } = await execAsync(
+          `cat /sys/block/${deviceName}/queue/write_cache 2>&1 || echo "unavailable"`,
+        );
+        core.info(`💾 Write cache: ${writeCache.trim()}`);
+      } catch {
+        core.debug("Could not read write cache");
+      }
+
+      // Check for any dirty pages at mount time
+      try {
+        const { stdout: dirtyPages } = await execAsync(
+          "cat /proc/meminfo | grep -E 'Dirty|Writeback'",
+        );
+        core.info(`📝 Dirty pages at mount:\n${dirtyPages.trim()}`);
+      } catch {
+        core.debug("Could not read dirty pages");
+      }
+    } catch (error) {
+      core.warning(`RBD diagnosis failed: ${(error as Error).message}`);
+    } finally {
+      core.endGroup();
+    }
+
     // Log filesystem free space after mount
     try {
       const { stdout } = await execAsync(
