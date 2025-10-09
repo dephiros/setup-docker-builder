@@ -214,7 +214,7 @@ async function testSyncEffectiveness(): Promise<void> {
         }
 
         // Clean up for next iteration
-        await execAsync(`rm -f ${testFile}`);
+        await execAsync(`sudo rm -f ${testFile}`);
       } catch (iterError) {
         core.warning(
           `Iteration ${i} failed: ${(iterError as Error).message} (continuing)`,
