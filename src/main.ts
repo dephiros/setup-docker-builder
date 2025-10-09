@@ -162,8 +162,9 @@ async function testSyncEffectiveness(): Promise<void> {
         }
 
         // 1. Write a test file to generate dirty pages (10MB)
-        const testData = "x".repeat(10 * 1024 * 1024);
-        await execAsync(`echo '${testData}' > ${testFile}`);
+        // Use Node.js writeFileSync to avoid E2BIG (argument list too long)
+        const testData = Buffer.alloc(10 * 1024 * 1024, "x");
+        fs.writeFileSync(testFile, testData);
 
         // Small delay to ensure write is buffered
         await new Promise((resolve) => setTimeout(resolve, 50));
