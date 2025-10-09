@@ -85,7 +85,7 @@ async function checkBoltDbIntegrity(skip = false): Promise<boolean> {
 
               try {
                 const { stdout: checkResult } = await execAsync(
-                  `timeout 6s sudo systemd-run --scope --quiet -p MemoryMax=512M bbolt check "${dbFile}" 2>&1`,
+                  `sudo systemd-run --scope --quiet -p MemoryMax=512M -p RuntimeMaxSec=6s bbolt check "${dbFile}" 2>&1`,
                 );
                 const duration = Date.now() - startTime;
                 const durationSeconds = (duration / 1000).toFixed(2);
