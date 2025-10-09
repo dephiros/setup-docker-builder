@@ -134,6 +134,142 @@ async function diagnoseRbdDevice(): Promise<void> {
 }
 
 /**
+ * Tests whether sync actually flushes data to disk or if it's being ignored by Firecracker
+ * This helps verify the CacheType setting (Unsafe vs Writeback)
+ * Runs 100 iterations to catch intermittent issues and timing races
+ */
+async function testSyncEffectiveness(): Promise<void> {
+  core.startGroup("🧪 Stress testing sync effectiveness (100 iterations)");
+
+  const iterations = 100;
+  const results: Array<{
+    iteration: number;
+    dirtyBefore: number;
+    dirtyAfter: number;
+    reduction: number;
+    reductionPercent: number;
+    syncDuration: number;
+  }> = [];
+
+  try {
+    const testFile = "/var/lib/buildkit/.sync-test-file";
+
+    for (let i = 1; i <= iterations; i++) {
+      try {
+        // Log progress every 10 iterations
+        if (i % 10 === 1 || i === iterations) {
+          core.info(`Progress: ${i}/${iterations} iterations...`);
+        }
+
+        // 1. Write a test file to generate dirty pages (10MB)
+        const testData = "x".repeat(10 * 1024 * 1024);
+        await execAsync(`echo '${testData}' > ${testFile}`);
+
+        // Small delay to ensure write is buffered
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // 2. Check dirty pages before sync
+        const { stdout: dirtyBefore } = await execAsync(
+          "cat /proc/meminfo | grep -E '^Dirty:' | awk '{print $2}'",
+        );
+        const dirtyKBBefore = parseInt(dirtyBefore.trim(), 10);
+
+        // 3. Call sync and time it
+        const syncStart = Date.now();
+        await execAsync("sync");
+        const syncDuration = Date.now() - syncStart;
+
+        // 4. Small delay to let async operations settle
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // 5. Check dirty pages after sync
+        const { stdout: dirtyAfter } = await execAsync(
+          "cat /proc/meminfo | grep -E '^Dirty:' | awk '{print $2}'",
+        );
+        const dirtyKBAfter = parseInt(dirtyAfter.trim(), 10);
+
+        // 6. Calculate reduction
+        const reduction = dirtyKBBefore - dirtyKBAfter;
+        const reductionPercent =
+          dirtyKBBefore > 0 ? (reduction / dirtyKBBefore) * 100 : 0;
+
+        results.push({
+          iteration: i,
+          dirtyBefore: dirtyKBBefore,
+          dirtyAfter: dirtyKBAfter,
+          reduction,
+          reductionPercent,
+          syncDuration,
+        });
+
+        // Log details for failures or every 10th iteration
+        if (reductionPercent < 50 || i % 10 === 0) {
+          const status = reductionPercent < 50 ? "❌ FAILED" : "✓";
+          core.info(
+            `  [${i}] ${status} Before: ${dirtyKBBefore} kB → After: ${dirtyKBAfter} kB | ` +
+              `Reduction: ${reductionPercent.toFixed(1)}% | Sync: ${syncDuration}ms`,
+          );
+        }
+
+        // Clean up for next iteration
+        await execAsync(`rm -f ${testFile}`);
+      } catch (iterError) {
+        core.warning(
+          `Iteration ${i} failed: ${(iterError as Error).message} (continuing)`,
+        );
+      }
+    }
+
+    // 7. Calculate and report statistics
+    core.info("\n📊 Summary Statistics:");
+    if (results.length === 0) {
+      core.warning("No successful iterations to analyze");
+    } else {
+      const avgReduction =
+        results.reduce((sum, r) => sum + r.reductionPercent, 0) /
+        results.length;
+      const minReduction = Math.min(...results.map((r) => r.reductionPercent));
+      const maxReduction = Math.max(...results.map((r) => r.reductionPercent));
+      const avgSyncDuration =
+        results.reduce((sum, r) => sum + r.syncDuration, 0) / results.length;
+
+      const failedCount = results.filter((r) => r.reductionPercent < 50).length;
+
+      core.info(`  Successful iterations: ${results.length}/${iterations}`);
+      core.info(`  Average reduction: ${avgReduction.toFixed(1)}%`);
+      core.info(`  Min reduction: ${minReduction.toFixed(1)}%`);
+      core.info(`  Max reduction: ${maxReduction.toFixed(1)}%`);
+      core.info(`  Average sync duration: ${avgSyncDuration.toFixed(0)}ms`);
+      core.info(`  Failed flushes (<50%): ${failedCount}/${results.length}`);
+
+      // 8. Interpret overall results
+      if (avgReduction < 50 || failedCount > iterations * 0.2) {
+        core.warning(
+          `\n⚠️  SYNC APPEARS INEFFECTIVE: Average ${avgReduction.toFixed(1)}% reduction, ${failedCount} failures. ` +
+            `This suggests Firecracker CacheType may be set to "Unsafe", which ignores sync commands.`,
+        );
+      } else if (failedCount > 0) {
+        core.warning(
+          `\n⚠️  SYNC MOSTLY WORKING BUT INCONSISTENT: ${failedCount} iterations had <50% reduction. ` +
+            `This could indicate intermittent issues.`,
+        );
+      } else {
+        core.info(
+          `\n✅ SYNC IS WORKING CONSISTENTLY: Average ${avgReduction.toFixed(1)}% reduction across all iterations. ` +
+            `This confirms Firecracker CacheType is set to "Writeback" and honors sync commands.`,
+        );
+      }
+    }
+  } catch (error) {
+    core.warning(
+      `Sync effectiveness test failed: ${(error as Error).message} (non-critical)`,
+    );
+  } finally {
+    core.endGroup();
+  }
+}
+
+/**
  * Performs aggressive flushing to ensure all writes reach Ceph cluster
  * This is a diagnostic/fix attempt for the checksum mismatch issue
  */
@@ -716,8 +852,11 @@ void actionsToolkit.run(
           }
         }
 
-        // Step 2: Diagnose RBD configuration and perform aggressive flush
+        // Step 2: Diagnose RBD configuration and test sync effectiveness
         await diagnoseRbdDevice();
+
+        // Test if sync actually works (verifies Firecracker CacheType setting)
+        await testSyncEffectiveness();
 
         // Use aggressive flush instead of simple sync to ensure all writes reach Ceph
         core.info("Performing aggressive flush before integrity check...");
