@@ -163,6 +163,7 @@ async function testSyncEffectiveness(): Promise<void> {
   }
 
   const iterations = 100;
+  const MIN_DIRTY_THRESHOLD_KB = 1024; // Ignore measurements when system already clean (<1 MiB dirty)
   const results: Array<{
     iteration: number;
     dirtyBefore: number;
@@ -173,6 +174,7 @@ async function testSyncEffectiveness(): Promise<void> {
     backgroundIOBefore: number;
     backgroundIOAfter: number;
   }> = [];
+  let skippedIterations = 0;
 
   try {
     const testFile = "/var/lib/buildkit/.sync-test-file";
@@ -240,26 +242,33 @@ async function testSyncEffectiveness(): Promise<void> {
         const reductionPercent =
           dirtyKBBefore > 0 ? (reduction / dirtyKBBefore) * 100 : 0;
 
-        results.push({
-          iteration: i,
-          dirtyBefore: dirtyKBBefore,
-          dirtyAfter: dirtyKBAfter,
-          reduction,
-          reductionPercent,
-          syncDuration,
-          backgroundIOBefore,
-          backgroundIOAfter,
-        });
-
-        // Log details for failures or every 10th iteration
-        if (reductionPercent < 50 || i % 10 === 0) {
-          const status = reductionPercent < 50 ? "❌ FAILED" : "✓";
-          const bgIO = backgroundIOAfter - backgroundIOBefore;
-          const bgIOStr = bgIO > 0 ? ` | BG I/O: ${bgIO} sectors` : "";
-          core.info(
-            `  [${i}] ${status} Before: ${dirtyKBBefore} kB → After: ${dirtyKBAfter} kB | ` +
-              `Reduction: ${reductionPercent.toFixed(1)}% | Sync: ${syncDuration}ms${bgIOStr}`,
+        if (dirtyKBBefore < MIN_DIRTY_THRESHOLD_KB) {
+          skippedIterations++;
+          core.debug(
+            `  [${i}] Skipping iteration: only ${dirtyKBBefore} kB dirty before sync`,
           );
+        } else {
+          results.push({
+            iteration: i,
+            dirtyBefore: dirtyKBBefore,
+            dirtyAfter: dirtyKBAfter,
+            reduction,
+            reductionPercent,
+            syncDuration,
+            backgroundIOBefore,
+            backgroundIOAfter,
+          });
+
+          // Log details for failures or every 10th iteration
+          if (reductionPercent < 50 || i % 10 === 0) {
+            const status = reductionPercent < 50 ? "❌ FAILED" : "✓";
+            const bgIO = backgroundIOAfter - backgroundIOBefore;
+            const bgIOStr = bgIO > 0 ? ` | BG I/O: ${bgIO} sectors` : "";
+            core.info(
+              `  [${i}] ${status} Before: ${dirtyKBBefore} kB → After: ${dirtyKBAfter} kB | ` +
+                `Reduction: ${reductionPercent.toFixed(1)}% | Sync: ${syncDuration}ms${bgIOStr}`,
+            );
+          }
         }
 
         // Clean up for next iteration
@@ -300,6 +309,9 @@ async function testSyncEffectiveness(): Promise<void> {
       core.info(`  Max reduction: ${maxReduction.toFixed(1)}%`);
       core.info(`  Average sync duration: ${avgSyncDuration.toFixed(0)}ms`);
       core.info(`  Failed flushes (<50%): ${failedCount}/${results.length}`);
+      if (skippedIterations > 0) {
+        core.info(`  Skipped low-dirty iterations: ${skippedIterations}`);
+      }
 
       if (bgIOResults.length > 0) {
         core.info(
