@@ -12,11 +12,11 @@ importers:
         specifier: ^1.10.1
         version: 1.11.1
       '@buf/blacksmith_vm-agent.bufbuild_es':
-        specifier: 1.5.0-20251002224722-c44b45f26c5e.2
-        version: 1.5.0-20251002224722-c44b45f26c5e.2(@bufbuild/protobuf@1.10.1)
+        specifier: 1.9.0-20251006151057-c11382a97f51.2
+        version: 1.9.0-20251006151057-c11382a97f51.2(@bufbuild/protobuf@1.10.1)
       '@buf/blacksmith_vm-agent.connectrpc_es':
-        specifier: 1.6.1-20251002224722-c44b45f26c5e.2
-        version: 1.6.1-20251002224722-c44b45f26c5e.2(@bufbuild/protobuf@1.10.1)(@connectrpc/connect@1.6.1)
+        specifier: 1.6.1-20251006151057-c11382a97f51.2
+        version: 1.6.1-20251006151057-c11382a97f51.2(@bufbuild/protobuf@1.10.1)(@connectrpc/connect@1.6.1)
       '@connectrpc/connect':
         specifier: ^1.6.1
         version: 1.6.1(@bufbuild/protobuf@1.10.1)
@@ -407,28 +407,28 @@ packages:
     engines: {node: '>=18'}
     dev: true
 
-  /@buf/blacksmith_vm-agent.bufbuild_es@1.10.0-20251002224722-c44b45f26c5e.1(@bufbuild/protobuf@1.10.1):
-    resolution: {tarball: https://buf.build/gen/npm/v1/@buf/blacksmith_vm-agent.bufbuild_es/-/blacksmith_vm-agent.bufbuild_es-1.10.0-20251002224722-c44b45f26c5e.1.tgz}
+  /@buf/blacksmith_vm-agent.bufbuild_es@1.10.0-20251006151057-c11382a97f51.1(@bufbuild/protobuf@1.10.1):
+    resolution: {tarball: https://buf.build/gen/npm/v1/@buf/blacksmith_vm-agent.bufbuild_es/-/blacksmith_vm-agent.bufbuild_es-1.10.0-20251006151057-c11382a97f51.1.tgz}
     peerDependencies:
       '@bufbuild/protobuf': ^1.10.0
     dependencies:
       '@bufbuild/protobuf': 1.10.1
     dev: false
 
-  /@buf/blacksmith_vm-agent.bufbuild_es@1.5.0-20251002224722-c44b45f26c5e.2(@bufbuild/protobuf@1.10.1):
-    resolution: {tarball: https://buf.build/gen/npm/v1/@buf/blacksmith_vm-agent.bufbuild_es/-/blacksmith_vm-agent.bufbuild_es-1.5.0-20251002224722-c44b45f26c5e.2.tgz}
+  /@buf/blacksmith_vm-agent.bufbuild_es@1.9.0-20251006151057-c11382a97f51.2(@bufbuild/protobuf@1.10.1):
+    resolution: {tarball: https://buf.build/gen/npm/v1/@buf/blacksmith_vm-agent.bufbuild_es/-/blacksmith_vm-agent.bufbuild_es-1.9.0-20251006151057-c11382a97f51.2.tgz}
     peerDependencies:
-      '@bufbuild/protobuf': ^1.5.0
+      '@bufbuild/protobuf': ^1.9.0
     dependencies:
       '@bufbuild/protobuf': 1.10.1
     dev: false
 
-  /@buf/blacksmith_vm-agent.connectrpc_es@1.6.1-20251002224722-c44b45f26c5e.2(@bufbuild/protobuf@1.10.1)(@connectrpc/connect@1.6.1):
-    resolution: {tarball: https://buf.build/gen/npm/v1/@buf/blacksmith_vm-agent.connectrpc_es/-/blacksmith_vm-agent.connectrpc_es-1.6.1-20251002224722-c44b45f26c5e.2.tgz}
+  /@buf/blacksmith_vm-agent.connectrpc_es@1.6.1-20251006151057-c11382a97f51.2(@bufbuild/protobuf@1.10.1)(@connectrpc/connect@1.6.1):
+    resolution: {tarball: https://buf.build/gen/npm/v1/@buf/blacksmith_vm-agent.connectrpc_es/-/blacksmith_vm-agent.connectrpc_es-1.6.1-20251006151057-c11382a97f51.2.tgz}
     peerDependencies:
       '@connectrpc/connect': ^1.6.1
     dependencies:
-      '@buf/blacksmith_vm-agent.bufbuild_es': 1.10.0-20251002224722-c44b45f26c5e.1(@bufbuild/protobuf@1.10.1)
+      '@buf/blacksmith_vm-agent.bufbuild_es': 1.10.0-20251006151057-c11382a97f51.1(@bufbuild/protobuf@1.10.1)
       '@connectrpc/connect': 1.6.1(@bufbuild/protobuf@1.10.1)
     transitivePeerDependencies:
       - '@bufbuild/protobuf'
