@@ -143,6 +143,7 @@ async function testSyncEffectiveness(): Promise<void> {
 
   let devicePath: string | null = null;
   let deviceFlushSupported = true;
+  const deviceUnsafeReasons: string[] = [];
 
   // First, check the disk cache configuration
   try {
@@ -180,6 +181,16 @@ async function testSyncEffectiveness(): Promise<void> {
       );
       const writeCache = writeCacheRaw.trim() || "unavailable";
       core.info(`Device ${devicePath} write cache mode: ${writeCache}`);
+      const isWriteBack = /write\s*back/i.test(writeCache);
+      const isWriteThrough =
+        /write\s*through/i.test(writeCache) || /unsafe/i.test(writeCache);
+
+      if (isWriteThrough) {
+        deviceFlushSupported = false;
+        deviceUnsafeReasons.push(
+          `write cache mode is "${writeCache}", which aligns with Firecracker cacheType "Unsafe".`,
+        );
+      }
 
       const { stdout: flushCapabilityRaw } = await execAsync(
         `sudo cat /sys/block/${deviceName}/queue/flush 2>/dev/null || echo "unavailable"`,
@@ -190,13 +201,14 @@ async function testSyncEffectiveness(): Promise<void> {
         core.warning(
           `Device ${devicePath} reports queue/flush=0 (flush commands disabled). This typically corresponds to Firecracker cacheType "Unsafe".`,
         );
+        deviceUnsafeReasons.push("queue/flush reports 0 (flush disabled).");
       } else if (flushTrim !== "unavailable") {
         core.info(`Device ${devicePath} flush capability: ${flushTrim}`);
       } else {
-        core.warning(
-          `Could not read queue/flush for ${devicePath}; assuming flush support may be disabled.`,
-        );
-        deviceFlushSupported = false;
+        const context = isWriteBack
+          ? "Could not read queue/flush (kernel did not expose value)"
+          : "Could not read queue/flush; cache mode already suspicious";
+        core.info(`Device ${devicePath}: ${context}.`);
       }
 
       const { stdout: fuaCapabilityRaw } = await execAsync(
@@ -376,7 +388,9 @@ async function testSyncEffectiveness(): Promise<void> {
       if (!deviceFlushSupported) {
         const deviceLabel = devicePath ?? "/var/lib/buildkit";
         core.warning(
-          `\n⚠️  DEVICE FLUSH DISABLED: ${deviceLabel} reports queue/flush=0. ` +
+          `\n⚠️  DEVICE FLUSH DISABLED: Observed ${deviceLabel} where ${deviceUnsafeReasons.join(
+            " ",
+          )} ` +
             `This indicates Firecracker is still running with CacheType "Unsafe". ` +
             `The sync loop above only shows Linux dropping dirty pages, but data may not reach Ceph.`,
         );
