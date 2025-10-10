@@ -141,6 +141,9 @@ async function diagnoseRbdDevice(): Promise<void> {
 async function testSyncEffectiveness(): Promise<void> {
   core.startGroup("🧪 Stress testing sync effectiveness (100 iterations)");
 
+  let devicePath: string | null = null;
+  let deviceFlushSupported = true;
+
   // First, check the disk cache configuration
   try {
     core.info("🔍 Checking disk cache configuration...");
@@ -160,6 +163,56 @@ async function testSyncEffectiveness(): Promise<void> {
     }
   } catch {
     core.info("Could not check disk configuration");
+  }
+
+  // Inspect the backing device for /var/lib/buildkit to understand flush support
+  try {
+    const { stdout: mountInfo } = await execAsync(
+      "mount | grep /var/lib/buildkit",
+    );
+    const deviceMatch = mountInfo.match(/^(\/dev\/[^\s]+)/);
+    if (deviceMatch) {
+      devicePath = deviceMatch[1];
+      const deviceName = devicePath.replace("/dev/", "");
+
+      const { stdout: writeCacheRaw } = await execAsync(
+        `sudo cat /sys/block/${deviceName}/queue/write_cache 2>/dev/null || echo "unavailable"`,
+      );
+      const writeCache = writeCacheRaw.trim() || "unavailable";
+      core.info(`Device ${devicePath} write cache mode: ${writeCache}`);
+
+      const { stdout: flushCapabilityRaw } = await execAsync(
+        `sudo cat /sys/block/${deviceName}/queue/flush 2>/dev/null || echo "unavailable"`,
+      );
+      const flushTrim = flushCapabilityRaw.trim();
+      if (flushTrim === "0") {
+        deviceFlushSupported = false;
+        core.warning(
+          `Device ${devicePath} reports queue/flush=0 (flush commands disabled). This typically corresponds to Firecracker cacheType "Unsafe".`,
+        );
+      } else if (flushTrim !== "unavailable") {
+        core.info(`Device ${devicePath} flush capability: ${flushTrim}`);
+      } else {
+        core.warning(
+          `Could not read queue/flush for ${devicePath}; assuming flush support may be disabled.`,
+        );
+        deviceFlushSupported = false;
+      }
+
+      const { stdout: fuaCapabilityRaw } = await execAsync(
+        `sudo cat /sys/block/${deviceName}/queue/fua 2>/dev/null || echo "unavailable"`,
+      );
+      const fuaCapability = fuaCapabilityRaw.trim() || "unavailable";
+      if (fuaCapability !== "unavailable") {
+        core.info(`Device ${devicePath} FUA support: ${fuaCapability}`);
+      }
+    } else {
+      core.warning("Could not determine device backing /var/lib/buildkit");
+    }
+  } catch (error) {
+    core.warning(
+      `Failed to inspect /var/lib/buildkit device queue settings: ${(error as Error).message}`,
+    );
   }
 
   const iterations = 100;
@@ -320,7 +373,14 @@ async function testSyncEffectiveness(): Promise<void> {
       }
 
       // 8. Interpret overall results
-      if (avgReduction < 50 || failedCount > iterations * 0.2) {
+      if (!deviceFlushSupported) {
+        const deviceLabel = devicePath ?? "/var/lib/buildkit";
+        core.warning(
+          `\n⚠️  DEVICE FLUSH DISABLED: ${deviceLabel} reports queue/flush=0. ` +
+            `This indicates Firecracker is still running with CacheType "Unsafe". ` +
+            `The sync loop above only shows Linux dropping dirty pages, but data may not reach Ceph.`,
+        );
+      } else if (avgReduction < 50 || failedCount > iterations * 0.2) {
         core.warning(
           `\n⚠️  SYNC APPEARS INEFFECTIVE: Average ${avgReduction.toFixed(1)}% reduction, ${failedCount} failures. ` +
             `This suggests Firecracker CacheType may be set to "Unsafe", which ignores sync commands.`,
