@@ -182,7 +182,12 @@ export async function startBuildkitd(
 
 export async function getStickyDisk(options?: {
   signal?: AbortSignal;
-}): Promise<{ expose_id: string; device: string }> {
+}): Promise<{
+  expose_id: string;
+  device: string;
+  parent_snapshot_name: string;
+  clone_name: string;
+}> {
   const client = await reporter.createBlacksmithAgentClient();
   core.info(`Created Blacksmith agent client`);
 
@@ -217,6 +222,9 @@ export async function getStickyDisk(options?: {
   return {
     expose_id: (response as { exposeId?: string }).exposeId || "",
     device: (response as { diskIdentifier?: string }).diskIdentifier || "",
+    parent_snapshot_name:
+      (response as { parentSnapshotName?: string }).parentSnapshotName || "",
+    clone_name: (response as { cloneName?: string }).cloneName || "",
   };
 }
 
@@ -367,6 +375,12 @@ export async function setupStickyDisk(): Promise<{
     });
     const exposeId = stickyDiskResponse.expose_id;
     const device = stickyDiskResponse.device;
+    const parentSnapshotName = stickyDiskResponse.parent_snapshot_name;
+    const cloneName = stickyDiskResponse.clone_name;
+
+    core.info(`Sticky disk parent snapshot: ${parentSnapshotName}`);
+    core.info(`Sticky disk clone name: ${cloneName}`);
+
     if (device === "") {
       throw new Error("No device found in sticky disk response");
     }
