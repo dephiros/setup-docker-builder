@@ -141,6 +141,27 @@ async function diagnoseRbdDevice(): Promise<void> {
 async function testSyncEffectiveness(): Promise<void> {
   core.startGroup("🧪 Stress testing sync effectiveness (100 iterations)");
 
+  // First, check the disk cache configuration
+  try {
+    core.info("🔍 Checking disk cache configuration...");
+    const { stdout: lsblkOutput } = await execAsync(
+      "lsblk -o NAME,TYPE,SIZE,MOUNTPOINT",
+    );
+    core.info(`Block devices:\n${lsblkOutput}`);
+
+    // Try to check virtio block device settings if available
+    try {
+      const { stdout: virtioInfo } = await execAsync(
+        "ls -la /sys/block/vd*/queue/write_cache 2>/dev/null || echo 'N/A'",
+      );
+      core.info(`Virtio write cache settings:\n${virtioInfo}`);
+    } catch {
+      core.info("Could not read virtio cache settings (may require root)");
+    }
+  } catch {
+    core.info("Could not check disk configuration");
+  }
+
   const iterations = 100;
   const results: Array<{
     iteration: number;
@@ -149,6 +170,8 @@ async function testSyncEffectiveness(): Promise<void> {
     reduction: number;
     reductionPercent: number;
     syncDuration: number;
+    backgroundIOBefore: number;
+    backgroundIOAfter: number;
   }> = [];
 
   try {
@@ -170,11 +193,22 @@ async function testSyncEffectiveness(): Promise<void> {
         // Small delay to ensure write is buffered
         await new Promise((resolve) => setTimeout(resolve, 50));
 
-        // 2. Check dirty pages before sync
+        // 2. Check dirty pages and background I/O before sync
         const { stdout: dirtyBefore } = await execAsync(
           "cat /proc/meminfo | grep -E '^Dirty:' | awk '{print $2}'",
         );
         const dirtyKBBefore = parseInt(dirtyBefore.trim(), 10);
+
+        // Check vdb writes to detect background I/O
+        let backgroundIOBefore = 0;
+        try {
+          const { stdout: iostatBefore } = await execAsync(
+            "cat /sys/block/vdb/stat | awk '{print $7}'", // sectors written
+          );
+          backgroundIOBefore = parseInt(iostatBefore.trim(), 10);
+        } catch {
+          // Ignore if vdb stats not available
+        }
 
         // 3. Call sync and time it
         const syncStart = Date.now();
@@ -184,11 +218,22 @@ async function testSyncEffectiveness(): Promise<void> {
         // 4. Small delay to let async operations settle
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // 5. Check dirty pages after sync
+        // 5. Check dirty pages and background I/O after sync
         const { stdout: dirtyAfter } = await execAsync(
           "cat /proc/meminfo | grep -E '^Dirty:' | awk '{print $2}'",
         );
         const dirtyKBAfter = parseInt(dirtyAfter.trim(), 10);
+
+        // Check vdb writes again
+        let backgroundIOAfter = 0;
+        try {
+          const { stdout: iostatAfter } = await execAsync(
+            "cat /sys/block/vdb/stat | awk '{print $7}'", // sectors written
+          );
+          backgroundIOAfter = parseInt(iostatAfter.trim(), 10);
+        } catch {
+          // Ignore if vdb stats not available
+        }
 
         // 6. Calculate reduction
         const reduction = dirtyKBBefore - dirtyKBAfter;
@@ -202,14 +247,18 @@ async function testSyncEffectiveness(): Promise<void> {
           reduction,
           reductionPercent,
           syncDuration,
+          backgroundIOBefore,
+          backgroundIOAfter,
         });
 
         // Log details for failures or every 10th iteration
         if (reductionPercent < 50 || i % 10 === 0) {
           const status = reductionPercent < 50 ? "❌ FAILED" : "✓";
+          const bgIO = backgroundIOAfter - backgroundIOBefore;
+          const bgIOStr = bgIO > 0 ? ` | BG I/O: ${bgIO} sectors` : "";
           core.info(
             `  [${i}] ${status} Before: ${dirtyKBBefore} kB → After: ${dirtyKBAfter} kB | ` +
-              `Reduction: ${reductionPercent.toFixed(1)}% | Sync: ${syncDuration}ms`,
+              `Reduction: ${reductionPercent.toFixed(1)}% | Sync: ${syncDuration}ms${bgIOStr}`,
           );
         }
 
@@ -237,12 +286,26 @@ async function testSyncEffectiveness(): Promise<void> {
 
       const failedCount = results.filter((r) => r.reductionPercent < 50).length;
 
+      // Analyze background I/O contamination
+      const bgIOResults = results.filter(
+        (r) => r.backgroundIOBefore > 0 || r.backgroundIOAfter > 0,
+      );
+      const bgIOContaminated = bgIOResults.filter(
+        (r) => r.backgroundIOAfter - r.backgroundIOBefore > 1000, // More than 500KB of background writes
+      ).length;
+
       core.info(`  Successful iterations: ${results.length}/${iterations}`);
       core.info(`  Average reduction: ${avgReduction.toFixed(1)}%`);
       core.info(`  Min reduction: ${minReduction.toFixed(1)}%`);
       core.info(`  Max reduction: ${maxReduction.toFixed(1)}%`);
       core.info(`  Average sync duration: ${avgSyncDuration.toFixed(0)}ms`);
       core.info(`  Failed flushes (<50%): ${failedCount}/${results.length}`);
+
+      if (bgIOResults.length > 0) {
+        core.info(
+          `  Iterations with background I/O detected: ${bgIOContaminated}/${bgIOResults.length}`,
+        );
+      }
 
       // 8. Interpret overall results
       if (avgReduction < 50 || failedCount > iterations * 0.2) {
@@ -251,10 +314,26 @@ async function testSyncEffectiveness(): Promise<void> {
             `This suggests Firecracker CacheType may be set to "Unsafe", which ignores sync commands.`,
         );
       } else if (failedCount > 0) {
-        core.warning(
-          `\n⚠️  SYNC MOSTLY WORKING BUT INCONSISTENT: ${failedCount} iterations had <50% reduction. ` +
-            `This could indicate intermittent issues.`,
-        );
+        let explanation = `\n⚠️  SYNC MOSTLY WORKING BUT INCONSISTENT: ${failedCount} iterations had <50% reduction. `;
+
+        if (bgIOContaminated > 0) {
+          explanation +=
+            `\nDetected background I/O in ${bgIOContaminated} iterations, which may contaminate measurements. ` +
+            `The test measures system-wide dirty pages, so concurrent BuildKit operations can interfere. `;
+        }
+
+        if (failedCount > iterations * 0.1) {
+          explanation +=
+            `\n${((failedCount / iterations) * 100).toFixed(1)}% failure rate is concerning and may indicate: ` +
+            `\n  1. Writeback cache timing issues (kernel not flushing fast enough) ` +
+            `\n  2. Background I/O contaminating measurements ` +
+            `\n  3. Additional caching layer between VM and Ceph ` +
+            `\n  4. Old VMs with "Unsafe" CacheType still running`;
+        } else {
+          explanation += `This is likely normal variation from background I/O.`;
+        }
+
+        core.warning(explanation);
       } else {
         core.info(
           `\n✅ SYNC IS WORKING CONSISTENTLY: Average ${avgReduction.toFixed(1)}% reduction across all iterations. ` +
