@@ -353,6 +353,119 @@ export async function logDatabaseHashes(label: string): Promise<void> {
   }
 }
 
+/**
+ * Logs buildx disk usage to help identify cached layers.
+ * Uses a 5-second timeout to avoid blocking.
+ */
+export async function logBuildxDiskUsage(): Promise<void> {
+  try {
+    core.info("Checking buildx disk usage for cached layers:");
+
+    const { stdout } = await execAsync(
+      `timeout 5s docker buildx du --verbose 2>&1`,
+    );
+
+    const output = stdout.trim();
+    if (!output) {
+      core.info("No disk usage data available.");
+      return;
+    }
+
+    // Parse and format the output for better readability.
+    const lines = output.split("\n");
+    let totalSize = 0;
+    const cacheEntries: Array<{
+      id: string;
+      size: number;
+      shared: boolean;
+      description: string;
+    }> = [];
+
+    for (const line of lines) {
+      // Parse lines that contain cache IDs and sizes.
+      // Expected format: ID SIZE [SHARED] DESCRIPTION
+      const match = line.match(/^(\S+)\s+(\d+(?:\.\d+)?[KMGT]?B?)\s+(.*?)$/);
+      if (match) {
+        const [, id, sizeStr, description] = match;
+        const isShared = description.includes("shared");
+
+        // Convert size to bytes for aggregation.
+        const sizeBytes = parseSizeToBytes(sizeStr);
+        totalSize += sizeBytes;
+
+        cacheEntries.push({
+          id: id,
+          size: sizeBytes,
+          shared: isShared,
+          description: description.trim(),
+        });
+      }
+    }
+
+    // Log summary.
+    if (cacheEntries.length > 0) {
+      core.info(`Found ${cacheEntries.length} cache entries`);
+      core.info(`Total cache size: ${formatBytes(totalSize)}`);
+
+      // Log all cache entries in build order (as returned by buildx du).
+      core.info("Cache entries in build order:");
+      for (const entry of cacheEntries) {
+        const sharedLabel = entry.shared ? " [SHARED]" : "";
+        core.info(
+          `  ${entry.id}: ${formatBytes(entry.size)}${sharedLabel} - ${entry.description}`,
+        );
+      }
+    } else {
+      // If parsing failed, just log the raw output.
+      core.info("Raw disk usage output:");
+      core.info(output);
+    }
+  } catch (error) {
+    const execError = error as { code?: number; message?: string };
+    if (execError.code === 124) {
+      core.warning("buildx disk usage check timed out after 5 seconds.");
+    } else {
+      core.warning(
+        `Failed to get buildx disk usage: ${execError.message || "unknown error"}`,
+      );
+    }
+  }
+}
+
+/**
+ * Parses a size string (e.g., "1.5GB", "500MB") to bytes.
+ */
+function parseSizeToBytes(sizeStr: string): number {
+  const match = sizeStr.match(/^(\d+(?:\.\d+)?)\s*([KMGT]?B?)$/i);
+  if (!match) return 0;
+
+  const value = parseFloat(match[1]);
+  const unit = match[2].toUpperCase();
+
+  const multipliers: Record<string, number> = {
+    B: 1,
+    KB: 1024,
+    MB: 1024 * 1024,
+    GB: 1024 * 1024 * 1024,
+    TB: 1024 * 1024 * 1024 * 1024,
+  };
+
+  return value * (multipliers[unit] || 1);
+}
+
+/**
+ * Formats bytes into a human-readable string.
+ */
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const k = 1024;
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${units[i]}`;
+}
+
 // stickyDiskTimeoutMs states the max amount of time this action will wait for the VM agent to
 // expose the sticky disk from the storage agent, map it onto the host and then patch the drive
 // into the VM.

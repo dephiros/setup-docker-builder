@@ -18,6 +18,7 @@ import {
   getNumCPUs,
   pruneBuildkitCache,
   logDatabaseHashes,
+  logBuildxDiskUsage,
 } from "./setup_builder";
 import {
   installBuildKit,
@@ -443,6 +444,11 @@ void actionsToolkit.run(
         const builder = await toolkit.builder.inspect();
         core.info(JSON.stringify(builder, null, 2));
         core.info("Blacksmith builder is ready for use by Docker");
+      });
+
+      // Log buildx disk usage to identify cached layers
+      await core.group(`Buildx disk usage`, async () => {
+        await logBuildxDiskUsage();
       });
     } else {
       // Fallback to local builder
