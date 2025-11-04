@@ -461,19 +461,26 @@ export async function setupStickyDisk(): Promise<{
       core.warning(`Failed to get filesystem free space: ${errorMsg}`);
     }
 
-    // Check for lost+found directory which indicates filesystem issues during shutdown
+    // Check if lost+found directory has recovered files (indicating filesystem issues)
     try {
       const { stdout } = await execAsync(
-        `test -d ${mountPoint}/lost+found && echo "exists" || echo "not found"`,
+        `find ${mountPoint}/lost+found -mindepth 1 -maxdepth 1 2>/dev/null | head -1`,
       );
-      if (stdout.trim() === "exists") {
-        core.warning(
-          `Found lost+found directory in ${mountPoint} - this typically indicates there was an issue during previous shutdown`,
+      if (stdout.trim()) {
+        // Count the number of recovered files
+        const { stdout: countOutput } = await execAsync(
+          `find ${mountPoint}/lost+found -mindepth 1 -maxdepth 1 2>/dev/null | wc -l`,
         );
+        const fileCount = parseInt(countOutput.trim(), 10);
+        core.warning(
+          `Found ${fileCount} recovered file(s) in lost+found - this indicates filesystem recovery occurred during a previous unclean shutdown`,
+        );
+      } else {
+        core.debug(`lost+found directory is empty (normal state)`);
       }
     } catch (error) {
       core.debug(
-        `Error checking for lost+found directory: ${(error as Error).message}`,
+        `Error checking lost+found directory contents: ${(error as Error).message}`,
       );
     }
 
