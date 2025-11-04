@@ -67,12 +67,8 @@ describe("setup-docker-builder", () => {
 
     mockGetInputList.mockImplementation((name: string) => {
       switch (name) {
-        case "driver-opts":
-          // Simulate the parsing with ignoreComma and quote options
-          return [
-            "env.OTEL_TRACES_EXPORTER=otlp",
-            "env.OTEL_SERVICE_NAME=buildkitd",
-          ];
+        case "buildkitd-env":
+          return ["OTEL_TRACES_EXPORTER=otlp", "OTEL_SERVICE_NAME=buildkitd"];
         case "platforms":
           return [];
         default:
@@ -83,9 +79,9 @@ describe("setup-docker-builder", () => {
     // Verify mocks are called correctly
     expect(mockGetInput("buildx-version")).toBe("v0.23.0");
     expect(mockGetBooleanInput("nofallback")).toBe(false);
-    expect(mockGetInputList("driver-opts")).toEqual([
-      "env.OTEL_TRACES_EXPORTER=otlp",
-      "env.OTEL_SERVICE_NAME=buildkitd",
+    expect(mockGetInputList("buildkitd-env")).toEqual([
+      "OTEL_TRACES_EXPORTER=otlp",
+      "OTEL_SERVICE_NAME=buildkitd",
     ]);
   });
 });

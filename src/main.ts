@@ -161,7 +161,7 @@ export interface Inputs {
   nofallback: boolean;
   "github-token": string;
   "skip-integrity-check": boolean;
-  "driver-opts": string[];
+  "buildkitd-env": string[];
 }
 
 async function getInputs(): Promise<Inputs> {
@@ -172,10 +172,7 @@ async function getInputs(): Promise<Inputs> {
     nofallback: core.getBooleanInput("nofallback"),
     "github-token": core.getInput("github-token"),
     "skip-integrity-check": core.getBooleanInput("skip-integrity-check"),
-    "driver-opts": Util.getInputList("driver-opts", {
-      ignoreComma: true,
-      quote: false,
-    }),
+    "buildkitd-env": Util.getInputList("buildkitd-env"),
   };
 }
 
@@ -308,7 +305,7 @@ async function startBlacksmithBuilder(
     const buildkitdAddr = await startAndConfigureBuildkitd(
       parallelism,
       buildkitdPath,
-      inputs["driver-opts"],
+      inputs["buildkitd-env"],
     );
     const buildkitdDurationMs = Date.now() - buildkitdStartTime;
     await reporter.reportMetric(

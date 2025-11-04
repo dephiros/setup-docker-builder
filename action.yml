@@ -26,8 +26,15 @@ inputs:
     description: "If true, skip the bbolt database integrity check"
     required: false
     default: "false"
-  driver-opts:
-    description: "List of additional driver-specific options (e.g., env.VARIABLE=value)"
+  buildkitd-env:
+    description: |
+      Environment variables to pass to the buildkitd daemon process.
+      Each line should be in the format: VARIABLE=value
+      Example:
+        buildkitd-env: |
+          OTEL_TRACES_EXPORTER=otlp
+          OTEL_SERVICE_NAME=buildkitd
+          BUILDKIT_STEP_LOG_MAX_SIZE=10485760
     required: false
 runs:
   using: node20

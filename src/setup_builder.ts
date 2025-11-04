@@ -115,34 +115,29 @@ export async function startBuildkitd(
   parallelism: number,
   addr: string,
   buildkitdPath?: string,
-  driverOpts?: string[],
+  buildkitdEnv?: string[],
 ): Promise<string> {
   try {
     await writeBuildkitdTomlFile(parallelism, addr);
 
-    // Parse driver-opts to extract environment variables
+    // Parse buildkitd environment variables
     const envVars: Record<string, string> = {};
-    if (driverOpts && driverOpts.length > 0) {
-      core.info(`Processing ${driverOpts.length} driver-opt(s)`);
-      for (const opt of driverOpts) {
-        // Handle environment variable options (env.VARIABLE=value)
-        if (opt.startsWith("env.")) {
-          // Format: env.VARIABLE=value
-          const envPart = opt.substring(4); // Remove "env." prefix
-          const equalIndex = envPart.indexOf("=");
-          if (equalIndex > 0) {
-            const key = envPart.substring(0, equalIndex);
-            const value = envPart.substring(equalIndex + 1);
-            envVars[key] = value;
-            core.info(`Setting buildkitd environment variable: ${key}`);
-            core.debug(`  ${key}=${value}`);
-          } else {
-            core.warning(`Invalid driver-opt format (missing value): ${opt}`);
-          }
+    if (buildkitdEnv && buildkitdEnv.length > 0) {
+      core.info(
+        `Processing ${buildkitdEnv.length} buildkitd environment variable(s)`,
+      );
+      for (const envVar of buildkitdEnv) {
+        // Format: VARIABLE=value
+        const equalIndex = envVar.indexOf("=");
+        if (equalIndex > 0) {
+          const key = envVar.substring(0, equalIndex);
+          const value = envVar.substring(equalIndex + 1);
+          envVars[key] = value;
+          core.info(`Setting buildkitd environment variable: ${key}`);
+          core.debug(`  ${key}=${value}`);
         } else {
-          // Log unsupported options but continue
           core.warning(
-            `Unsupported driver-opt (only env.* options are currently supported): ${opt}`,
+            `Invalid environment variable format (missing value): ${envVar}`,
           );
         }
       }
@@ -284,7 +279,7 @@ const buildkitdTimeoutMs = 30000;
 export async function startAndConfigureBuildkitd(
   parallelism: number,
   buildkitdPath?: string,
-  driverOpts?: string[],
+  buildkitdEnv?: string[],
 ): Promise<string> {
   // Use standard buildkitd address
   const buildkitdAddr = BUILDKIT_DAEMON_ADDR;
@@ -293,7 +288,7 @@ export async function startAndConfigureBuildkitd(
     parallelism,
     buildkitdAddr,
     buildkitdPath,
-    driverOpts,
+    buildkitdEnv,
   );
   core.debug(`buildkitd daemon started at addr ${addr}`);
   stateHelper.setBuildkitdAddr(addr);

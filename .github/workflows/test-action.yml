@@ -61,8 +61,8 @@ jobs:
           docker buildx build --platform linux/amd64 .
         continue-on-error: true
 
-  test-driver-opts:
-    name: Test Driver Options Support
+  test-buildkitd-env:
+    name: Test BuildKit Environment Variables
     runs-on: blacksmith
     steps:
       - name: Checkout
@@ -94,15 +94,15 @@ jobs:
           pnpm install
           pnpm run build
 
-      - name: Test Docker Builder Setup with Driver Options
+      - name: Test Docker Builder Setup with BuildKit Environment Variables
         uses: ./
         with:
           buildx-version: "v0.23.0"
-          driver-opts: |
-            env.TEST_VAR_1=value1
-            env.TEST_VAR_2=value with spaces
-            env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
-            env.BUILDKIT_STEP_LOG_MAX_SPEED=10485760
+          buildkitd-env: |
+            TEST_VAR_1=value1
+            TEST_VAR_2=value with spaces
+            BUILDKIT_STEP_LOG_MAX_SIZE=10485760
+            BUILDKIT_STEP_LOG_MAX_SPEED=10485760
         continue-on-error: true # Allow failure since we may not have Blacksmith env vars
 
       - name: Verify buildkitd received environment variables
@@ -120,7 +120,7 @@ jobs:
             echo "buildkitd is not running (may be expected in test environment)"
           fi
 
-      - name: Test Docker build with driver-opts configured
+      - name: Test Docker build with buildkitd-env configured
         run: |
           cat > Dockerfile <<EOF
           FROM alpine:latest
