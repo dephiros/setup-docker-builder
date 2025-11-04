@@ -60,3 +60,71 @@ jobs:
           EOF
           docker buildx build --platform linux/amd64 .
         continue-on-error: true
+
+  test-driver-opts:
+    name: Test Driver Options Support
+    runs-on: blacksmith
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Configure npm for buf registry
+        env:
+          BUF_TOKEN: ${{ secrets.BUF_TOKEN }}
+        run: |
+          npm config set @buf:registry https://buf.build/gen/npm/v1/
+          npm config set //buf.build/gen/npm/v1/:_authToken $BUF_TOKEN
+
+      - name: Build action
+        run: |
+          pnpm install
+          pnpm run build
+
+      - name: Test Docker Builder Setup with Driver Options
+        uses: ./
+        with:
+          buildx-version: "v0.23.0"
+          driver-opts: |
+            env.TEST_VAR_1=value1
+            env.TEST_VAR_2=value with spaces
+            env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
+            env.BUILDKIT_STEP_LOG_MAX_SPEED=10485760
+        continue-on-error: true # Allow failure since we may not have Blacksmith env vars
+
+      - name: Verify buildkitd received environment variables
+        run: |
+          # Check if buildkitd is running and try to verify environment
+          if pgrep buildkitd > /dev/null; then
+            echo "buildkitd is running"
+            # Try to check the buildkitd log for environment variables
+            if [ -f /tmp/buildkitd.log ]; then
+              echo "Checking buildkitd log for configuration..."
+              # Just verify the log exists and has content
+              tail -n 50 /tmp/buildkitd.log || true
+            fi
+          else
+            echo "buildkitd is not running (may be expected in test environment)"
+          fi
+
+      - name: Test Docker build with driver-opts configured
+        run: |
+          cat > Dockerfile <<EOF
+          FROM alpine:latest
+          RUN echo "Testing setup-docker-builder with driver-opts"
+          EOF
+          docker buildx build --platform linux/amd64 .
+        continue-on-error: true

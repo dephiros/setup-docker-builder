@@ -26,6 +26,9 @@ inputs:
     description: "If true, skip the bbolt database integrity check"
     required: false
     default: "false"
+  driver-opts:
+    description: "List of additional driver-specific options (e.g., env.VARIABLE=value)"
+    required: false
 runs:
   using: node20
   main: dist/index.js

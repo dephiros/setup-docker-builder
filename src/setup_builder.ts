@@ -115,9 +115,44 @@ export async function startBuildkitd(
   parallelism: number,
   addr: string,
   buildkitdPath?: string,
+  driverOpts?: string[],
 ): Promise<string> {
   try {
     await writeBuildkitdTomlFile(parallelism, addr);
+
+    // Parse driver-opts to extract environment variables
+    const envVars: Record<string, string> = {};
+    if (driverOpts && driverOpts.length > 0) {
+      core.info(`Processing ${driverOpts.length} driver-opt(s)`);
+      for (const opt of driverOpts) {
+        // Handle environment variable options (env.VARIABLE=value)
+        if (opt.startsWith("env.")) {
+          // Format: env.VARIABLE=value
+          const envPart = opt.substring(4); // Remove "env." prefix
+          const equalIndex = envPart.indexOf("=");
+          if (equalIndex > 0) {
+            const key = envPart.substring(0, equalIndex);
+            const value = envPart.substring(equalIndex + 1);
+            envVars[key] = value;
+            core.info(`Setting buildkitd environment variable: ${key}`);
+            core.debug(`  ${key}=${value}`);
+          } else {
+            core.warning(`Invalid driver-opt format (missing value): ${opt}`);
+          }
+        } else {
+          // Log unsupported options but continue
+          core.warning(
+            `Unsupported driver-opt (only env.* options are currently supported): ${opt}`,
+          );
+        }
+      }
+
+      if (Object.keys(envVars).length > 0) {
+        core.info(
+          `Configured ${Object.keys(envVars).length} environment variable(s) for buildkitd`,
+        );
+      }
+    }
 
     // Creates a log stream to write buildkitd output to a file.
     const logStream = fs.createWriteStream("/tmp/buildkitd.log", {
@@ -126,7 +161,16 @@ export async function startBuildkitd(
     // Start buildkitd in background (detached) mode since we're only setting up
     // Use custom buildkitd path if provided, otherwise use system buildkitd
     const buildkitdBinary = buildkitdPath || "buildkitd";
-    const buildkitdCommand = `nohup sudo ${buildkitdBinary} --debug --config=buildkitd.toml --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host > /tmp/buildkitd.log 2>&1 &`;
+
+    // Build the command with environment variables
+    let buildkitdCommand = "nohup";
+    // Add environment variables to the command
+    for (const [key, value] of Object.entries(envVars)) {
+      buildkitdCommand += ` ${key}='${value}'`;
+    }
+    buildkitdCommand += ` sudo -E ${buildkitdBinary} --debug --config=buildkitd.toml --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host > /tmp/buildkitd.log 2>&1 &`;
+
+    core.debug(`Starting buildkitd with command: ${buildkitdCommand}`);
     const buildkitd = execa(buildkitdCommand, {
       shell: "/bin/bash",
       stdio: ["ignore", "pipe", "pipe"],
@@ -236,11 +280,17 @@ const buildkitdTimeoutMs = 30000;
 export async function startAndConfigureBuildkitd(
   parallelism: number,
   buildkitdPath?: string,
+  driverOpts?: string[],
 ): Promise<string> {
   // Use standard buildkitd address
   const buildkitdAddr = BUILDKIT_DAEMON_ADDR;
 
-  const addr = await startBuildkitd(parallelism, buildkitdAddr, buildkitdPath);
+  const addr = await startBuildkitd(
+    parallelism,
+    buildkitdAddr,
+    buildkitdPath,
+    driverOpts,
+  );
   core.debug(`buildkitd daemon started at addr ${addr}`);
   stateHelper.setBuildkitdAddr(addr);
 

@@ -1,0 +1,33 @@
+name: Build with OTEL Tracing
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Builder with OTEL
+        uses: useblacksmith/setup-docker-builder@main
+        id: setup-builder
+        with:
+          driver-opts: |
+            env.OTEL_TRACES_EXPORTER=otlp
+            env.OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+            env.OTEL_EXPORTER_OTLP_ENDPOINT=https://${{ secrets.DEV_OTEL_AUTH_TOKEN }}-otel.jumpapp.dev
+            env.OTEL_SERVICE_NAME=buildkitd
+            env.OTEL_RESOURCE_ATTRIBUTES=workflow.name=deploy_prod,dockerfile=multiple,build.target=release,runner.name=blacksmith-8vcpu-ubuntu-2404
+
+      - name: Build Docker image
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --tag myapp:latest \
+            --push \
+            .

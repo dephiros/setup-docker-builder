@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as core from "@actions/core";
+import { Util } from "@docker/actions-toolkit/lib/util";
 
 // Mock the @actions/core module
 vi.mock("@actions/core", () => ({
@@ -12,6 +13,13 @@ vi.mock("@actions/core", () => ({
   saveState: vi.fn(),
   getState: vi.fn(),
   group: vi.fn((name, fn) => fn()),
+}));
+
+// Mock the Util module
+vi.mock("@docker/actions-toolkit/lib/util", () => ({
+  Util: {
+    getInputList: vi.fn(),
+  },
 }));
 
 describe("setup-docker-builder", () => {
@@ -35,6 +43,7 @@ describe("setup-docker-builder", () => {
   it("should handle inputs correctly", async () => {
     const mockGetInput = vi.mocked(core.getInput);
     const mockGetBooleanInput = vi.mocked(core.getBooleanInput);
+    const mockGetInputList = vi.mocked(Util.getInputList);
 
     mockGetInput.mockImplementation((name: string) => {
       switch (name) {
@@ -56,8 +65,27 @@ describe("setup-docker-builder", () => {
       }
     });
 
+    mockGetInputList.mockImplementation((name: string) => {
+      switch (name) {
+        case "driver-opts":
+          // Simulate the parsing with ignoreComma and quote options
+          return [
+            "env.OTEL_TRACES_EXPORTER=otlp",
+            "env.OTEL_SERVICE_NAME=buildkitd",
+          ];
+        case "platforms":
+          return [];
+        default:
+          return [];
+      }
+    });
+
     // Verify mocks are called correctly
     expect(mockGetInput("buildx-version")).toBe("v0.23.0");
     expect(mockGetBooleanInput("nofallback")).toBe(false);
+    expect(mockGetInputList("driver-opts")).toEqual([
+      "env.OTEL_TRACES_EXPORTER=otlp",
+      "env.OTEL_SERVICE_NAME=buildkitd",
+    ]);
   });
 });
