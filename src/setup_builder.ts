@@ -170,7 +170,7 @@ export async function startBuildkitd(
     }
     buildkitdCommand += ` sudo -E ${buildkitdBinary} --debug --config=buildkitd.toml --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host > /tmp/buildkitd.log 2>&1 &`;
 
-    core.debug(`Starting buildkitd with command: ${buildkitdCommand}`);
+    core.info(`Starting buildkitd with command: ${buildkitdCommand}`);
     const buildkitd = execa(buildkitdCommand, {
       shell: "/bin/bash",
       stdio: ["ignore", "pipe", "pipe"],
