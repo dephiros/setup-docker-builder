@@ -211,6 +211,23 @@ async function setupBuildx(version: string, toolkit: Toolkit): Promise<void> {
   let toolPath: string | undefined;
   const standalone = await toolkit.buildx.isStandalone();
 
+  // Check if requested version is already installed (e.g., pre-installed in VM rootfs)
+  if (version && (await toolkit.buildx.isAvailable())) {
+    try {
+      const { stdout } = await execAsync("buildx version");
+      const match = stdout.match(/v\d+\.\d+\.\d+/);
+      if (match && match[0] === version) {
+        core.info(`Buildx ${version} already installed, skipping download`);
+        await core.group(`Buildx version`, async () => {
+          await toolkit.buildx.printVersion();
+        });
+        return;
+      }
+    } catch {
+      // Version check failed, continue to download
+    }
+  }
+
   if (!(await toolkit.buildx.isAvailable()) || version) {
     await core.group(`Download buildx from GitHub Releases`, async () => {
       toolPath = await retryWithBackoff(() =>
