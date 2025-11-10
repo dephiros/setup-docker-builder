@@ -9,9 +9,7 @@ on:
 jobs:
   test-setup:
     name: Test Setup Docker Builder
-    runs-on:
-      - blacksmith-staging-4vcpu-ubuntu-2204
-      - bs-dev-taha
+    runs-on: blacksmith
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,9 +63,7 @@ jobs:
 
   test-driver-opts:
     name: Test Driver Options Support
-    runs-on:
-      - blacksmith-staging-4vcpu-ubuntu-2204
-      - bs-dev-taha
+    runs-on: blacksmith
     steps:
       - name: Checkout
         uses: actions/checkout@v4
