@@ -101,6 +101,8 @@ async function checkBoltDbIntegrity(skip = false): Promise<boolean> {
                 } else {
                   core.warning(`⚠ ${dbFile}: ${checkResult}`);
                   allChecksPass = false;
+                  // Report failed check
+                  await reporter.reportIntegrityCheckFailure(dbFile);
                 }
               } catch (checkError) {
                 const duration = Date.now() - startTime;
@@ -126,6 +128,8 @@ async function checkBoltDbIntegrity(skip = false): Promise<boolean> {
                     `⚠ ${dbFile}: Integrity check failed: ${errorMessage}`,
                   );
                   allChecksPass = false;
+                  // Report actual failure
+                  await reporter.reportIntegrityCheckFailure(dbFile);
                 }
               }
             } catch (error) {
