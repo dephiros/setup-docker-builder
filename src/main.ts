@@ -667,14 +667,6 @@ void actionsToolkit.run(
                 break;
               } catch (error) {
                 if (attempt === 3) {
-                  try {
-                    await execAsync(`sudo fsfreeze --unfreeze "${mountPoint}"`);
-                    core.info(`Unfroze filesystem at ${mountPoint}`);
-                  } catch (unfreezeError) {
-                    core.warning(
-                      `Failed to unfreeze filesystem: ${(unfreezeError as Error).message}`,
-                    );
-                  }
                   throw new Error(
                     `Failed to unmount ${mountPoint} after 3 attempts: ${(error as Error).message}`,
                   );
