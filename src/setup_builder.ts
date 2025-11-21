@@ -206,6 +206,24 @@ export async function startBuildkitd(
           core.info(
             `buildkitd daemon started successfully with PID ${stdout.trim()}`,
           );
+
+          try {
+            const buildkitdBinary = buildkitdPath || "buildkitd";
+            const { stdout: versionOutput } = await execAsync(
+              `${buildkitdBinary} --version`,
+            );
+            const versionMatch = versionOutput.match(/buildkit\s+v?(\S+)/i);
+            if (versionMatch) {
+              core.info(`buildkitd version: ${versionMatch[1]}`);
+            } else {
+              core.info(`buildkitd version: ${versionOutput.trim()}`);
+            }
+          } catch (error) {
+            core.debug(
+              `Could not determine buildkitd version: ${(error as Error).message}`,
+            );
+          }
+
           return addr;
         }
       } catch {
