@@ -37,6 +37,15 @@ async function getDeviceFromMount(mountPath: string): Promise<string | null> {
     const { stdout } = await execAsync(`findmnt -n -o SOURCE "${mountPath}"`);
     const device = stdout.trim();
     if (device) {
+      // Log full mount info for debugging
+      try {
+        const { stdout: mountInfo } = await execAsync(
+          `findmnt -n -o SOURCE,FSTYPE,OPTIONS "${mountPath}"`,
+        );
+        core.info(`Mount info for ${mountPath}: ${mountInfo.trim()}`);
+      } catch {
+        // Ignore if we can't get full mount info
+      }
       return device;
     }
   } catch {
@@ -47,6 +56,7 @@ async function getDeviceFromMount(mountPath: string): Promise<string | null> {
     const { stdout } = await execAsync(`mount | grep " ${mountPath} "`);
     const match = stdout.match(/^(\/dev\/\S+)/);
     if (match) {
+      core.info(`Mount info for ${mountPath}: ${stdout.trim()}`);
       return match[1];
     }
   } catch {
