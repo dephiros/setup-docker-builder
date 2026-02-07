@@ -6,6 +6,7 @@ import * as TOML from "@iarna/toml";
 import * as reporter from "./reporter";
 import { execa } from "execa";
 import * as stateHelper from "./state-helper";
+import { BOLT_CHECK_MAX_FILE_BYTES } from "./exec-utils";
 
 // Constants for configuration.
 const BUILDKIT_DAEMON_ADDR = "tcp://127.0.0.1:1234";
@@ -410,6 +411,24 @@ export async function logDatabaseHashes(label: string): Promise<void> {
 
   for (const filePath of dbFiles) {
     try {
+      // Check file size before attempting hash — skip large files that would
+      // timeout or consume excessive I/O.
+      try {
+        const { stdout: sizeOutput } = await execAsync(
+          `stat -c%s "${filePath}" 2>/dev/null || stat -f%z "${filePath}"`,
+        );
+        const sizeBytes = parseInt(sizeOutput.trim(), 10);
+        if (!isNaN(sizeBytes) && sizeBytes > BOLT_CHECK_MAX_FILE_BYTES) {
+          const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
+          core.info(
+            `  ${filePath}: skipping hash (${sizeMB} MB exceeds ${BOLT_CHECK_MAX_FILE_BYTES / (1024 * 1024)} MB limit)`,
+          );
+          continue;
+        }
+      } catch {
+        // If stat fails, still attempt the hash — md5sum will fail with a clear error
+      }
+
       // Use timeout and md5sum to offload computation, avoiding reading file in Node.js
       const { stdout } = await execAsync(
         `timeout 5s sudo md5sum "${filePath}"`,
