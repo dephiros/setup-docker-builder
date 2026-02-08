@@ -29,8 +29,10 @@ async function maybeFormatBlockDevice(device: string): Promise<string> {
           // Run resize2fs to ensure filesystem uses full block device
           await execAsync(`sudo resize2fs -f ${device}`);
           core.debug(`Resized ext4 filesystem on ${device}`);
-        } catch {
-          core.warning(`Error resizing ext4 filesystem on ${device}`);
+        } catch (resizeError) {
+          core.warning(
+            `Error resizing ext4 filesystem on ${device}: ${(resizeError as Error).message}`,
+          );
         }
         return device;
       }
