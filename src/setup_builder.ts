@@ -114,11 +114,14 @@ async function getRoutableHostDns(): Promise<string[]> {
 
     if (hostIp && hostIp !== "127.0.0.53") {
       core.info(
-        `Using host routable IP ${hostIp} as DNS nameserver for BuildKit (systemd-resolved cache)`,
+        `Using host routable IP ${hostIp} as sole DNS nameserver for BuildKit (systemd-resolved cache)`,
       );
-      // Use the host IP (backed by systemd-resolved cache) as primary,
-      // with public DNS as fallback in case systemd-resolved is unavailable
-      return [hostIp, ...publicDnsFallback];
+      // Only use the host IP (backed by systemd-resolved cache).
+      // Do NOT include public DNS fallbacks — BuildKit round-robins across
+      // all nameservers rather than using them as ordered fallbacks, which
+      // would bypass the cache for ~50% of queries and defeat the purpose.
+      // systemd-resolved itself already has upstream fallback configured.
+      return [hostIp];
     }
   } catch (error) {
     core.warning(
