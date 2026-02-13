@@ -312,9 +312,23 @@ export interface Inputs {
   "github-token": string;
   "skip-integrity-check": boolean;
   "driver-opts": string[];
+  "max-parallelism": number | null;
 }
 
 async function getInputs(): Promise<Inputs> {
+  const maxParallelismInput = core.getInput("max-parallelism");
+  let maxParallelism: number | null = null;
+  if (maxParallelismInput) {
+    const parsed = parseInt(maxParallelismInput, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      maxParallelism = parsed;
+    } else {
+      core.warning(
+        `Invalid max-parallelism value '${maxParallelismInput}', ignoring. Must be a positive integer.`,
+      );
+    }
+  }
+
   return {
     "buildx-version": core.getInput("buildx-version"),
     "buildkit-version": core.getInput("buildkit-version"),
@@ -326,6 +340,7 @@ async function getInputs(): Promise<Inputs> {
       ignoreComma: true,
       quote: false,
     }),
+    "max-parallelism": maxParallelism,
   };
 }
 
@@ -440,8 +455,14 @@ async function startBlacksmithBuilder(
       }
     }
 
-    // Get CPU count for parallelism
-    const parallelism = await getNumCPUs();
+    // Get CPU count for parallelism, allow user override via max-parallelism input
+    let parallelism = await getNumCPUs();
+    if (inputs["max-parallelism"] !== null) {
+      core.info(
+        `Overriding max-parallelism from ${parallelism} (nproc) to ${inputs["max-parallelism"]} (user-specified)`,
+      );
+      parallelism = inputs["max-parallelism"];
+    }
 
     // Check if buildkitd is already running before starting
     try {
