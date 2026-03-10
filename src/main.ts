@@ -428,6 +428,27 @@ async function startBlacksmithBuilder(
   inputs: Inputs,
 ): Promise<{ addr: string | null; exposeId: string }> {
   try {
+    // If buildkitd is already running, skip - the builder is already initialized.
+    try {
+      const { stdout } = await execAsync("pgrep buildkitd");
+      if (stdout.trim()) {
+        core.info(
+          `Detected existing buildkitd process (PID: ${stdout.trim()}). ` +
+            `Skipping builder setup - builder is already initialized.`,
+        );
+        return { addr: null, exposeId: "" };
+      }
+    } catch (error) {
+      if ((error as { code?: number }).code !== 1) {
+        // pgrep returns exit code 1 when no process found, which is what we want
+        // Any other error code indicates a real problem
+        throw new Error(
+          `Failed to check for existing buildkitd process: ${(error as Error).message}`,
+        );
+      }
+      // Exit code 1 means no buildkitd process found, which is good - we can proceed
+    }
+
     // Setup sticky disk
     const stickyDiskStartTime = Date.now();
     const stickyDiskSetup = await setupStickyDisk();
@@ -462,25 +483,6 @@ async function startBlacksmithBuilder(
         `Overriding max-parallelism from ${parallelism} (nproc) to ${inputs["max-parallelism"]} (user-specified)`,
       );
       parallelism = inputs["max-parallelism"];
-    }
-
-    // Check if buildkitd is already running before starting
-    try {
-      const { stdout } = await execAsync("pgrep buildkitd");
-      if (stdout.trim()) {
-        throw new Error(
-          `Detected existing buildkitd process (PID: ${stdout.trim()}). Refusing to start to avoid conflicts.`,
-        );
-      }
-    } catch (error) {
-      if ((error as { code?: number }).code !== 1) {
-        // pgrep returns exit code 1 when no process found, which is what we want
-        // Any other error code indicates a real problem
-        throw new Error(
-          `Failed to check for existing buildkitd process: ${(error as Error).message}`,
-        );
-      }
-      // Exit code 1 means no buildkitd process found, which is good - we can proceed
     }
 
     // Check for potential boltdb corruption
@@ -639,8 +641,12 @@ void actionsToolkit.run(
         core.info("Blacksmith builder is ready for use by Docker");
       });
     } else {
-      // Fallback to local builder
-      core.warning("Failed to setup Blacksmith builder, using local builder");
+      // Fallback: either Blacksmith builder setup failed, or buildkitd was
+      // already running. In both cases, reuse whatever builder is already
+      // configured.
+      core.warning(
+        "Blacksmith builder setup skipped or failed, checking for existing configured builder",
+      );
       await core.group(`Checking for configured builder`, async () => {
         try {
           const builder = await toolkit.builder.inspect();
