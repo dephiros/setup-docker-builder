@@ -568,9 +568,7 @@ async function maybeShutdownBuildkitd(): Promise<void> {
     await pruneBuildkitCache();
     core.info("BuildKit cache pruned");
   } catch (error) {
-    core.warning(
-      `Error pruning BuildKit cache: ${(error as Error).message}`,
-    );
+    core.warning(`Error pruning BuildKit cache: ${(error as Error).message}`);
   }
 
   // Critical: Shutdown buildkitd
@@ -592,9 +590,7 @@ async function logBuildkitdCrashLogs(): Promise<void> {
     core.info("Last 100 lines of buildkitd.log:");
     core.info(stdout);
   } catch (error) {
-    core.warning(
-      `Could not read buildkitd logs: ${(error as Error).message}`,
-    );
+    core.warning(`Could not read buildkitd logs: ${(error as Error).message}`);
   }
 }
 
