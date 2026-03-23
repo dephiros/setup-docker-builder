@@ -644,15 +644,16 @@ void actionsToolkit.run(
       await core.group(`Checking for configured builder`, async () => {
         try {
           const builder = await toolkit.builder.inspect();
-          if (builder) {
-            core.info(`Found configured builder: ${builder.name}`);
+          if (builder && builder.driver !== "docker") {
+            core.info(
+              `Found configured builder: ${builder.name} (driver: ${builder.driver})`,
+            );
           } else {
-            // Create a local builder
             const createLocalBuilderCmd =
               "docker buildx create --name local --driver docker-container --use";
             try {
               await Exec.exec(createLocalBuilderCmd);
-              core.info("Created and set a local builder for use");
+              core.info("Created and set a local docker-container builder");
             } catch (error) {
               core.setFailed(
                 `Failed to create local builder: ${(error as Error).message}`,
