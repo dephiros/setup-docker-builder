@@ -38,10 +38,13 @@ export function getBuilderName(): string {
   return core.getState("builderName");
 }
 
+let _sigkillUsed = false;
+
 export function setSigkillUsed(used: boolean) {
+  _sigkillUsed = used;
   core.saveState("sigkillUsed", used.toString());
 }
 
 export function getSigkillUsed(): boolean {
-  return core.getState("sigkillUsed") === "true";
+  return _sigkillUsed || core.getState("sigkillUsed") === "true";
 }

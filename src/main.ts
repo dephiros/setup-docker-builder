@@ -707,7 +707,11 @@ void actionsToolkit.run(
               Metric_MetricType.BPA_BUILDKITD_SHUTDOWN_DURATION_MS,
               buildkitdShutdownDurationMs,
             );
-            core.info("Shutdown buildkitd gracefully");
+            if (stateHelper.getSigkillUsed()) {
+              core.warning("buildkitd was terminated with SIGKILL after graceful shutdown failed");
+            } else {
+              core.info("Shutdown buildkitd gracefully");
+            }
           } else {
             // Check if buildkitd was expected to be running (we have state indicating it was started)
             const buildkitdAddr = stateHelper.getBuildkitdAddr();
